@@ -1,4 +1,4 @@
-import { LoginForm } from "@/components/login-component/login-form";
+import { LoginForm } from "@/components/login-content/login-form";
 import { LineChart, Bell, History } from "lucide-react";
 
 // Definisikan fitur-fitur utama dalam sebuah array agar kode lebih rapi

@@ -19,7 +19,7 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { NavUser } from "./nav-user";
+import { NavUser } from "./logout";
 import { NavMain } from "./nav-main";
 import { usePathname } from "next/navigation";
 
@@ -34,28 +34,28 @@ export function AppSidebar({ ...props }) {
 		},
 		navMain: [
 			{
-				title: "Home",
-				url: "/home",
+				title: "Dashboard",
+				url: "/dashboard/realtime-monitoring",
 				icon: SquareTerminal,
-				isActive: pathname === "/home",
+				isActive: pathname === "/dashboard/realtime-monitoring",
 			},
 			{
 				title: "Analisis Data",
-				url: "/analisis",
+				url: "/dashboard/analisis-data",
 				icon: BookOpen,
-				isActive: pathname === "/analisis",
+				isActive: pathname === "/dashboard/analisis-data",
 			},
 			{
 				title: "Histori",
-				url: "/histori",
+				url: "/dashboard/histori",
 				icon: History,
-				isActive: pathname === "/histori",
+				isActive: pathname === "/dashboard/histori",
 			},
 			{
 				title: "Pengaturan",
-				url: "/pengaturan",
+				url: "/dashboard/pengaturan",
 				icon: Settings2,
-				isActive: pathname === "/pengaturan",
+				isActive: pathname === "/dashboard/pengaturan",
 			},
 		],
 	};
@@ -82,9 +82,6 @@ export function AppSidebar({ ...props }) {
 			<SidebarContent>
 				<NavMain items={data.navMain} pathname={pathname} />
 			</SidebarContent>
-			<SidebarFooter>
-				<NavUser user={data.user} />
-			</SidebarFooter>
 		</Sidebar>
 	);
 }
