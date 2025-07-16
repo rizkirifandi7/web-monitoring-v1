@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
 	Area,
 	AreaChart,
+	Brush,
 	CartesianGrid,
-	ReferenceDot,
+	LabelList,
+	ReferenceArea,
 	ReferenceLine,
 	XAxis,
 	YAxis,
-	Dot,
 } from "recharts";
 import {
 	Card,
@@ -20,6 +21,8 @@ import {
 } from "@/components/ui/card";
 import {
 	ChartContainer,
+	ChartLegend,
+	ChartLegendContent,
 	ChartTooltip,
 	ChartTooltipContent,
 } from "@/components/ui/chart";
@@ -37,25 +40,22 @@ import {
 	TestTube,
 	Sun,
 	Zap,
-	AlertTriangle,
 	CheckCircle2,
 	TrendingUp,
 	TrendingDown,
-	LineChart,
 	Frown,
-	TrendingNeutral,
-	Link2,
-	ShieldQuestion,
-	BarChart4,
+	AlertTriangle,
+	LineChart,
 } from "lucide-react";
+import useSWR from "swr"; // Import SWR
 
-// --- KONFIGURASI SENSOR LENGKAP ---
+// Konfigurasi lengkap untuk semua sensor
 const chartConfig = {
 	temperature: {
 		label: "Suhu (°C)",
 		color: "#ef4444",
 		icon: Thermometer,
-		thresholds: { min: 22, max: 30 },
+		thresholds: { min: 25, max: 30 },
 		impact: {
 			low: "dapat memperlambat metabolisme dan pertumbuhan tanaman.",
 			high: "dapat menyebabkan stres panas dan membuat daun menjadi layu.",
@@ -69,7 +69,7 @@ const chartConfig = {
 		label: "Lembap (%)",
 		color: "#3b82f6",
 		icon: Droplets,
-		thresholds: { min: 40, max: 80 },
+		thresholds: { min: 60, max: 80 },
 		impact: {
 			low: "menyebabkan tanaman stres karena transpirasi berlebih dan risiko dehidrasi.",
 			high: "menciptakan lingkungan ideal bagi jamur dan penyakit seperti embun tepung.",
@@ -83,7 +83,7 @@ const chartConfig = {
 		label: "pH",
 		color: "#eab308",
 		icon: TestTube,
-		thresholds: { min: 5.5, max: 7.5 },
+		thresholds: { min: 5.5, max: 6.5 },
 		impact: {
 			low: "terlalu asam, dapat menghambat penyerapan nutrisi makro seperti Nitrogen dan Kalium.",
 			high: "terlalu basa, dapat mengganggu ketersediaan mikronutrien seperti Zat Besi.",
@@ -97,7 +97,7 @@ const chartConfig = {
 		label: "Cahaya (lux)",
 		color: "#14b8a6",
 		icon: Sun,
-		thresholds: { min: 1000, max: 10000 },
+		thresholds: { min: 10000, max: 30000 },
 		impact: {
 			low: "mengganggu proses fotosintesis, menyebabkan pertumbuhan lambat dan tanaman kerdil.",
 			high: "dapat membakar daun (leaf scorch) dan merusak klorofil secara permanen.",
@@ -111,7 +111,7 @@ const chartConfig = {
 		label: "EC (μS/cm)",
 		color: "#8b5cf6",
 		icon: Zap,
-		thresholds: { min: 700, max: 2000 },
+		thresholds: { min: 1.2, max: 2.5 },
 		impact: {
 			low: "menandakan kekurangan nutrisi esensial yang dibutuhkan untuk pertumbuhan optimal.",
 			high: "menyebabkan penumpukan garam berlebih (nutrient burn) yang dapat merusak akar.",
@@ -125,7 +125,7 @@ const chartConfig = {
 		label: "Suhu Air (°C)",
 		color: "#f97316",
 		icon: Thermometer,
-		thresholds: { min: 20, max: 28 },
+		thresholds: { min: 26, max: 28 },
 		impact: {
 			low: "memperlambat metabolisme akar dan kemampuan akar dalam menyerap nutrisi.",
 			high: "mengurangi kadar oksigen terlarut dalam air dan memicu penyakit akar busuk.",
@@ -133,6 +133,20 @@ const chartConfig = {
 		solution: {
 			low: "Gunakan pemanas akuarium (water heater) untuk menaikkan suhu air secara perlahan.",
 			high: "Gunakan pendingin air (water chiller) atau tambahkan botol es beku ke dalam reservoir.",
+		},
+	},
+	water_level: {
+		label: "Level Air (cm)",
+		color: "#0ea5e9", // Contoh warna biru langit
+		icon: Droplets, // Bisa gunakan icon lain jika ada
+		thresholds: { min: 5, max: 15 }, // Asumsi rentang aman
+		impact: {
+			low: "berisiko membuat pompa berjalan kering dan merusak akar karena kekeringan.",
+			high: "dapat mengurangi aerasi pada akar dan memicu pembusukan.",
+		},
+		solution: {
+			low: "Tambahkan air nutrisi ke dalam reservoir hingga mencapai level optimal.",
+			high: "Gunakan sebagian air untuk menyiram tanaman lain atau kurangi volume jika perlu.",
 		},
 	},
 };
@@ -144,8 +158,7 @@ const SENSOR_OPTIONS = Object.entries(chartConfig).map(
 	})
 );
 
-// --- SEMUA FUNGSI HELPER & ANALITIK ---
-
+// Fungsi helper untuk menghitung tanggal awal berdasarkan range
 function getStartDate(range) {
 	const days = range === "90d" ? 90 : range === "7d" ? 7 : 30;
 	const d = new Date();
@@ -153,105 +166,7 @@ function getStartDate(range) {
 	return d;
 }
 
-function detectAnomalies(data, key) {
-	const values = data
-		.map((d) => d[key])
-		.filter((v) => v != null)
-		.sort((a, b) => a - b);
-	if (values.length < 10) return [];
-
-	const q1 = values[Math.floor(values.length * 0.25)];
-	const q3 = values[Math.floor(values.length * 0.75)];
-	const iqr = q3 - q1;
-	const lowerBound = q1 - 1.5 * iqr;
-	const upperBound = q3 + 1.5 * iqr;
-
-	return data.filter(
-		(d) => d[key] != null && (d[key] < lowerBound || d[key] > upperBound)
-	);
-}
-
-function detectSignificantChanges(data, key, threshold = 30) {
-	const changes = [];
-	if (data.length < 2) return [];
-	for (let i = 1; i < data.length; i++) {
-		const prev = data[i - 1][key];
-		const curr = data[i][key];
-		if (prev != null && curr != null && prev !== 0) {
-			const percentChange = ((curr - prev) / Math.abs(prev)) * 100;
-			if (Math.abs(percentChange) > threshold) {
-				changes.push({
-					...data[i],
-					type: percentChange > 0 ? "Lonjakan" : "Penurunan",
-					change: percentChange,
-				});
-			}
-		}
-	}
-	return changes;
-}
-
-function calculateStability(data, key, thresholds) {
-	if (!thresholds) return null;
-	const values = data.map((d) => d[key]).filter((v) => v != null);
-	if (values.length === 0) return { percent: 0, text: "Data tidak cukup." };
-	const inRange = values.filter(
-		(v) => v >= thresholds.min && v <= thresholds.max
-	).length;
-	const percentage = (inRange / values.length) * 100;
-	return {
-		percent: percentage.toFixed(0),
-		text: `data berada dalam rentang normal (${thresholds.min} - ${thresholds.max})`,
-	};
-}
-
-function analyzeCorrelation(data, key1, key2) {
-	if (!key2 || data.length < 10) return null;
-	const values1 = data.map((d) => d[key1]).filter((v) => v != null);
-	const values2 = data.map((d) => d[key2]).filter((v) => v != null);
-	if (values1.length < 10 || values2.length < 10) return null;
-
-	const midPoint = Math.floor(values1.length / 2);
-	const avg1_first_half =
-		values1.slice(0, midPoint).reduce((a, b) => a + b, 0) / midPoint;
-	const avg1_second_half =
-		values1.slice(midPoint).reduce((a, b) => a + b, 0) /
-		(values1.length - midPoint);
-	const avg2_first_half =
-		values2.slice(0, midPoint).reduce((a, b) => a + b, 0) / midPoint;
-	const avg2_second_half =
-		values2.slice(midPoint).reduce((a, b) => a + b, 0) /
-		(values2.length - midPoint);
-
-	const change1 = avg1_second_half - avg1_first_half;
-	const change2 = avg2_second_half - avg2_first_half;
-	const threshold = 0.02; // Anggap perubahan di bawah 2% tidak signifikan
-
-	const direction1 =
-		Math.abs(change1 / avg1_first_half) < threshold
-			? "stabil"
-			: change1 > 0
-			? "naik"
-			: "turun";
-	const direction2 =
-		Math.abs(change2 / avg2_first_half) < threshold
-			? "stabil"
-			: change2 > 0
-			? "naik"
-			: "turun";
-
-	const label1 = chartConfig[key1].label.split(" ")[0];
-	const label2 = chartConfig[key2].label.split(" ")[0];
-
-	if (direction1 === "stabil" || direction2 === "stabil") {
-		return `Tidak ditemukan korelasi kuat antara ${label1} dan ${label2}.`;
-	}
-	if (direction1 === direction2) {
-		return `<strong>Korelasi positif</strong>: Saat ${label1} ${direction1}, ${label2} juga cenderung ${direction2}.`;
-	}
-	return `<strong>Korelasi negatif</strong>: Saat ${label1} ${direction1}, ${label2} justru cenderung ${direction2}.`;
-}
-
+// Fungsi untuk mendapatkan rekomendasi berdasarkan nilai sensor
 function getRecommendation(sensorKey, value, trend) {
 	const config = chartConfig[sensorKey];
 	if (value == null || !config || !config.thresholds) {
@@ -262,20 +177,22 @@ function getRecommendation(sensorKey, value, trend) {
 			icon: Frown,
 		};
 	}
+
 	const { min, max } = config.thresholds;
 	const { impact, solution } = config;
+
 	let status,
 		title,
 		analysisText = "";
 	let trendText = "";
+
 	if (trend && trend.direction !== "neutral") {
-		if (trend.direction === "up")
-			trendText = `Data menunjukkan tren kenaikan ${trend.percent}%.`;
-		if (trend.direction === "down")
-			trendText = `Data menunjukkan tren penurunan ${Math.abs(
-				trend.percent
-			)}%.`;
+		trendText =
+			trend.direction === "up"
+				? `Data menunjukkan tren kenaikan ${trend.percent}%.`
+				: `Data menunjukkan tren penurunan ${Math.abs(trend.percent)}%.`;
 	}
+
 	if (value < min) {
 		status = "warning";
 		title = `${config.label} Terlalu Rendah`;
@@ -293,9 +210,11 @@ function getRecommendation(sensorKey, value, trend) {
 			trendText || "Kondisi terpantau stabil."
 		}`;
 	}
+
 	if (status !== "normal" && trendText) {
 		analysisText += ` ${trendText}`;
 	}
+
 	return {
 		title,
 		text: analysisText,
@@ -304,57 +223,28 @@ function getRecommendation(sensorKey, value, trend) {
 	};
 }
 
-// --- KOMPONEN UTAMA ---
+// Komponen utama ChartTren
 export function ChartTren() {
 	const [primarySensor, setPrimarySensor] = useState("temperature");
-	const [secondarySensor, setSecondarySensor] = useState(null);
 	const [timeRange, setTimeRange] = useState("30d");
-	const [allData, setAllData] = useState([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState(null);
+	const { data: allData, error } = useSWR(
+		"/api/sensor-data?type=all&limit=100"
+	); // Menggunakan SWR untuk fetch data
+	const loading = !allData && !error; // Menentukan loading state
 
-	useEffect(() => {
-		async function fetchData() {
-			setLoading(true);
-			setError(null);
-			try {
-				const res = await fetch("/api/sensor-data?type=all");
-				if (!res.ok) throw new Error("Gagal mengambil data dari server.");
-				const json = await res.json();
-				setAllData(json);
-			} catch (err) {
-				setError(err.message);
-			} finally {
-				setLoading(false);
-			}
-		}
-		fetchData();
-	}, []);
+	const { filteredData, summaryStats, insights } = useMemo(() => {
+		if (!allData || !allData.data || !allData.data.length)
+			return { filteredData: [], summaryStats: {}, insights: {} };
 
-	const {
-		filteredData,
-		summaryStats,
-		insights,
-		anomalies,
-		significantChanges,
-	} = useMemo(() => {
-		if (!allData.length)
-			return {
-				filteredData: [],
-				summaryStats: {},
-				insights: {},
-				anomalies: [],
-				significantChanges: [],
-			};
 		const startDate = getStartDate(timeRange);
-		const dataInRange = allData.filter(
+		const dataInRange = allData.data.filter(
 			(item) => new Date(item.date) >= startDate
 		);
 		const primaryValues = dataInRange
 			.map((item) => item[primarySensor])
 			.filter((v) => v != null);
-		const primaryConfig = chartConfig[primarySensor];
 
+		// Hitung statistik dasar
 		const stats = {
 			avg:
 				primaryValues.length > 0
@@ -372,41 +262,29 @@ export function ChartTren() {
 					: "N/A",
 		};
 
+		// Hitung tren data
 		let trendData = null;
 		if (primaryValues.length > 1) {
 			const first = primaryValues[0];
 			const last = primaryValues[primaryValues.length - 1];
 			if (first !== 0) {
 				const percent = ((last - first) / Math.abs(first)) * 100;
-				if (!isNaN(percent))
+				if (!isNaN(percent)) {
 					trendData = {
 						percent: percent.toFixed(1),
 						direction:
 							percent > 0.1 ? "up" : percent < -0.1 ? "down" : "neutral",
 					};
+				}
 			}
 		}
-		const stability = calculateStability(
-			dataInRange,
-			primarySensor,
-			primaryConfig.thresholds
-		);
-		const correlation = analyzeCorrelation(
-			dataInRange,
-			primarySensor,
-			secondarySensor
-		);
-		const anomalyPoints = detectAnomalies(dataInRange, primarySensor);
-		const changePoints = detectSignificantChanges(dataInRange, primarySensor);
 
 		return {
 			filteredData: dataInRange,
 			summaryStats: stats,
-			insights: { trend: trendData, stability, correlation },
-			anomalies: anomalyPoints,
-			significantChanges: changePoints,
+			insights: { trend: trendData },
 		};
-	}, [allData, timeRange, primarySensor, secondarySensor]);
+	}, [allData, timeRange, primarySensor]);
 
 	const recommendation = getRecommendation(
 		primarySensor,
@@ -415,17 +293,17 @@ export function ChartTren() {
 			: null,
 		insights.trend
 	);
+
 	const unit =
 		chartConfig[primarySensor]?.label.match(/\(([^)]+)\)/)?.[1] || "";
-	const sensorsToRender = [primarySensor, secondarySensor].filter(Boolean);
 
 	return (
-		<Card className="p-4 rounded-2xl shadow-sm border">
+		<Card className="p-4 shadow-none border">
 			<CardHeader className="flex items-center gap-2 space-y-0 border-b pb-5 sm:flex-row">
 				<div className="grid flex-1 gap-1">
-					<CardTitle>Analisis Tren & Korelasi Sensor</CardTitle>
+					<CardTitle>Analisis Tren</CardTitle>
 					<CardDescription>
-						Analisis data cerdas untuk deteksi anomali, tren, dan korelasi.
+						Analisis data cerdas untuk deteksi anomali dan tren.
 					</CardDescription>
 				</div>
 				<div className="flex gap-2">
@@ -441,24 +319,6 @@ export function ChartTren() {
 							))}
 						</SelectContent>
 					</Select>
-					<Select
-						value={secondarySensor || "none"}
-						onValueChange={(v) => setSecondarySensor(v === "none" ? null : v)}
-					>
-						<SelectTrigger className="w-[150px] rounded-lg">
-							<SelectValue placeholder="Sensor Pembanding" />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="none">Tidak Ada</SelectItem>
-							{SENSOR_OPTIONS.filter((opt) => opt.value !== primarySensor).map(
-								(opt) => (
-									<SelectItem key={opt.value} value={opt.value}>
-										{opt.label}
-									</SelectItem>
-								)
-							)}
-						</SelectContent>
-					</Select>
 					<Select value={timeRange} onValueChange={setTimeRange}>
 						<SelectTrigger className="w-[120px] rounded-lg">
 							<SelectValue placeholder="Waktu" />
@@ -472,288 +332,69 @@ export function ChartTren() {
 				</div>
 			</CardHeader>
 
-			<CardContent className="pt-6">
+			<CardContent className="py-6">
 				{loading ? (
 					<ChartSkeleton />
 				) : error ? (
-					<div className="flex flex-col items-center justify-center h-[400px] text-center">
-						<Frown className="w-16 h-16 text-red-400 mb-4" />
-						<h3 className="text-xl font-semibold text-red-600">
-							Gagal Memuat Data
-						</h3>
-						<p className="text-slate-500">{error}</p>
-					</div>
+					<ErrorDisplay error={error.message} />
 				) : (
-					<>
-						<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-							<StatCard
-								title="Rata-rata"
-								value={summaryStats.avg}
-								icon={LineChart}
-								unit={unit}
-							/>
-							<StatCard
-								title="Tertinggi"
-								value={summaryStats.max}
-								icon={TrendingUp}
-								unit={unit}
-							/>
-							<StatCard
-								title="Terendah"
-								value={summaryStats.min}
-								icon={TrendingDown}
-								unit={unit}
-							/>
+					<div className="flex flex-col gap-4 w-full">
+						<StatsRow stats={summaryStats} unit={unit} />
+						<p className="text-base text-center font-semibold text-slate-700">
+							{chartConfig[primarySensor]?.label}
+						</p>
+						<div className="text-sm text-center text-slate-500">
+							Terakhir update:{" "}
+							{filteredData.length > 0
+								? new Date(
+										filteredData[filteredData.length - 1].date
+								  ).toLocaleString("id-ID")
+								: "-"}
 						</div>
-
-						<InsightCard insights={insights} />
-						{(anomalies.length > 0 || significantChanges.length > 0) && (
-							<EventCard anomalies={anomalies} changes={significantChanges} />
-						)}
-
-						<ChartContainer
-							config={chartConfig}
-							className="aspect-video h-[400px] w-full mt-6"
-						>
-							<AreaChart
-								data={filteredData}
-								margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
-							>
-								<defs>
-									{sensorsToRender.map((key) => (
-										<linearGradient
-											key={key}
-											id={`fill_${key}`}
-											x1="0"
-											y1="0"
-											x2="0"
-											y2="1"
-										>
-											<stop
-												offset="5%"
-												stopColor={chartConfig[key]?.color}
-												stopOpacity={0.8}
-											/>
-											<stop
-												offset="95%"
-												stopColor={chartConfig[key]?.color}
-												stopOpacity={0.1}
-											/>
-										</linearGradient>
-									))}
-								</defs>
-								<CartesianGrid strokeDasharray="3 3" vertical={true} />
-								<XAxis
-									dataKey="date"
-									tickFormatter={(v) =>
-										new Date(v).toLocaleDateString("id-ID", {
-											hour: "2-digit",
-                      minute: "2-digit",
-										})
-									}
-									tickLine={true}
-									axisLine={true}
-									tickMargin={8}
-								/>
-								<YAxis
-									yAxisId="left"
-									stroke={chartConfig[primarySensor]?.color}
-									tickLine={true}
-									axisLine={true}
-								/>
-								{secondarySensor && (
-									<YAxis
-										yAxisId="right"
-										orientation="right"
-										stroke={chartConfig[secondarySensor]?.color}
-										tickLine={false}
-										axisLine={false}
-									/>
-								)}
-								<ChartTooltip
-									cursor={true}
-									content={
-										<ChartTooltipContent
-											indicator="dot"
-											labelFormatter={(label) =>
-												new Date(label).toLocaleString("id-ID", {
-													dateStyle: "medium",
-													timeStyle: "short",
-												})
-											}
-										/>
-									}
-								/>
-
-								<ReferenceLine
-									y={chartConfig[primarySensor].thresholds.max}
-									yAxisId="left"
-									strokeDasharray="3 3"
-									stroke="#f87171"
-									strokeWidth={1.5}
-								/>
-								<ReferenceLine
-									y={chartConfig[primarySensor].thresholds.min}
-									yAxisId="left"
-									strokeDasharray="3 3"
-									stroke="#60a5fa"
-									strokeWidth={1.5}
-								/>
-
-								{anomalies.map((point) => (
-									<ReferenceDot
-										key={`ano-${point.date}`}
-										x={point.date}
-										y={point[primarySensor]}
-										r={8}
-										fill="#e53e3e"
-										stroke="white"
-										strokeWidth={2}
-										isFront={true}
-									/>
-								))}
-								{significantChanges.map((point) => (
-									<ReferenceDot
-										key={`chg-${point.date}`}
-										x={point.date}
-										y={point[primarySensor]}
-										r={7}
-										fill="#dd6b20"
-										stroke="white"
-										strokeWidth={2}
-										shape="diamond"
-										isFront={true}
-									/>
-								))}
-
-								<Area
-									yAxisId="left"
-									type="monotone"
-									dataKey={primarySensor}
-									name={chartConfig[primarySensor]?.label}
-									fill={`url(#fill_${primarySensor})`}
-									stroke={chartConfig[primarySensor]?.color}
-									strokeWidth={2.5}
-									dot={false}
-									activeDot={{ r: 6 }}
-								/>
-								{secondarySensor && (
-									<Area
-										yAxisId="right"
-										type="monotone"
-										dataKey={secondarySensor}
-										name={chartConfig[secondarySensor]?.label}
-										fill={`url(#fill_${secondarySensor})`}
-										stroke={chartConfig[secondarySensor]?.color}
-										strokeWidth={2}
-										dot={false}
-										activeDot={{ r: 6 }}
-									/>
-								)}
-							</AreaChart>
-						</ChartContainer>
-
+						<ChartVisualization
+							data={filteredData}
+							primarySensor={primarySensor}
+						/>
 						<RecommendationBox recommendation={recommendation} />
-					</>
+					</div>
 				)}
 			</CardContent>
 		</Card>
 	);
 }
 
-// --- SEMUA KOMPONEN HELPER ---
-function InsightCard({ insights }) {
-	const { trend, stability, correlation } = insights;
+// Komponen untuk menampilkan statistik
+function StatsRow({ stats, unit }) {
 	return (
-		<div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-			{trend && (
-				<div className="flex items-center p-3 rounded-lg bg-slate-50 border">
-					<div
-						className={`p-2 rounded-md mr-3 ${
-							trend.direction === "up"
-								? "bg-emerald-100 text-emerald-600"
-								: trend.direction === "down"
-								? "bg-red-100 text-red-600"
-								: "bg-slate-200"
-						}`}
-					>
-						{trend.direction === "up" ? (
-							<TrendingUp />
-						) : trend.direction === "down" ? (
-							<TrendingDown />
-						) : (
-							<TrendingNeutral />
-						)}
-					</div>
-					<div>
-						<p className="text-sm text-slate-500">Tren Keseluruhan</p>
-						<p className="font-semibold text-slate-800">
-							{trend.percent > 0 ? "+" : ""}
-							{trend.percent}%
-						</p>
-					</div>
-				</div>
-			)}
-			{stability && (
-				<div className="flex items-center p-3 rounded-lg bg-slate-50 border">
-					<div className="p-2 rounded-md mr-3 bg-slate-200">
-						<BarChart4 />
-					</div>
-					<div>
-						<p className="text-sm text-slate-500">Stabilitas</p>
-						<p className="font-semibold text-slate-800">
-							{stability.percent}%{" "}
-							<span className="font-normal text-xs">{stability.text}</span>
-						</p>
-					</div>
-				</div>
-			)}
-			{correlation ? (
-				<div className="flex items-center p-3 rounded-lg bg-slate-50 border">
-					<div className="p-2 rounded-md mr-3 bg-slate-200">
-						<Link2 />
-					</div>
-					<div>
-						<p className="text-sm text-slate-500">Korelasi</p>
-						<p
-							className="text-xs font-medium text-slate-700"
-							dangerouslySetInnerHTML={{ __html: correlation }}
-						/>
-					</div>
-				</div>
-			) : (
-				<div />
-			)}
+		<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+			<StatCard
+				title="Rata-rata"
+				value={stats.avg}
+				icon={LineChart}
+				unit={unit}
+			/>
+			<StatCard
+				title="Tertinggi"
+				value={stats.max}
+				icon={TrendingUp}
+				unit={unit}
+			/>
+			<StatCard
+				title="Terendah"
+				value={stats.min}
+				icon={TrendingDown}
+				unit={unit}
+			/>
 		</div>
 	);
 }
 
-function EventCard({ anomalies, changes }) {
-	return (
-		<div className="flex items-start p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 mb-6">
-			<ShieldQuestion className="w-8 h-8 mr-4 mt-1 flex-shrink-0 text-amber-500" />
-			<div>
-				<h4 className="font-bold text-lg">Peringatan Terdeteksi</h4>
-				<ul className="list-disc list-inside text-sm mt-1 space-y-1">
-					{anomalies.length > 0 && (
-						<li>
-							Ditemukan <strong>{anomalies.length} anomali data</strong>{" "}
-							(outlier) yang ditandai dengan titik merah.
-						</li>
-					)}
-					{changes.length > 0 && (
-						<li>
-							Ditemukan <strong>{changes.length} perubahan data drastis</strong>{" "}
-							yang ditandai dengan wajik oranye.
-						</li>
-					)}
-				</ul>
-			</div>
-		</div>
-	);
-}
+// Komponen stat card individual
+function StatCard({ icon: Icon, title, value, unit, trend }) {
+	const TrendIcon =
+		trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : null;
+	const trendColor = trend === "up" ? "text-green-500" : "text-red-500";
 
-function StatCard({ icon: Icon, title, value, unit }) {
 	return (
 		<div className="flex items-center p-4 bg-slate-50 rounded-lg border">
 			<div className="p-3 bg-slate-200 rounded-md mr-4">
@@ -761,15 +402,121 @@ function StatCard({ icon: Icon, title, value, unit }) {
 			</div>
 			<div>
 				<p className="text-sm text-slate-500">{title}</p>
-				<p className="text-2xl font-bold text-slate-800">
+				<p className="text-2xl font-bold text-slate-800 flex items-center gap-2">
 					{value}{" "}
 					<span className="text-base font-medium text-slate-400">{unit}</span>
+					{TrendIcon && <TrendIcon className={`w-5 h-5 ${trendColor}`} />}
 				</p>
 			</div>
 		</div>
 	);
 }
 
+// Komponen visualisasi chart
+function ChartVisualization({ data, primarySensor }) {
+	return (
+		<ChartContainer
+			config={chartConfig}
+			className="aspect-video h-[400px] w-full mt-6"
+		>
+			<AreaChart
+				data={data}
+				margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
+			>
+				<defs>
+					<linearGradient
+						id={`fill_${primarySensor}`}
+						x1="0"
+						y1="0"
+						x2="0"
+						y2="1"
+					>
+						<stop
+							offset="5%"
+							stopColor={chartConfig[primarySensor]?.color}
+							stopOpacity={0.8}
+						/>
+						<stop
+							offset="95%"
+							stopColor={chartConfig[primarySensor]?.color}
+							stopOpacity={0.1}
+						/>
+					</linearGradient>
+				</defs>
+				<CartesianGrid strokeDasharray="3 3" vertical={true} />
+				<XAxis
+					dataKey="date"
+					tickFormatter={(v) =>
+						new Date(v).toLocaleDateString("id-ID", {
+							hour: "2-digit",
+							minute: "2-digit",
+							month: "short",
+							day: "2-digit",
+						})
+					}
+					tickLine={true}
+					axisLine={true}
+					tickMargin={8}
+				/>
+				<YAxis
+					yAxisId="left"
+					stroke={chartConfig[primarySensor]?.color}
+					tickLine={true}
+					axisLine={true}
+				/>
+				<ChartTooltip
+					cursor={true}
+					content={
+						<ChartTooltipContent
+							indicator="dot"
+							labelFormatter={(label) =>
+								new Date(label).toLocaleString("id-ID", {
+									dateStyle: "medium",
+									timeStyle: "short",
+								})
+							}
+						/>
+					}
+				/>
+				<ReferenceArea
+					yAxisId="left"
+					y1={chartConfig[primarySensor].thresholds.min}
+					y2={chartConfig[primarySensor].thresholds.max}
+					stroke="none"
+					fill="#10b981" // Warna hijau untuk zona aman
+					fillOpacity={0.1}
+				/>
+				<Area
+					yAxisId="left"
+					type="monotone"
+					dataKey={primarySensor}
+					name={chartConfig[primarySensor]?.label}
+					fill={`url(#fill_${primarySensor})`}
+					stroke={chartConfig[primarySensor]?.color}
+					strokeWidth={2.5}
+					dot={true}
+					activeDot={{ r: 6 }}
+				>
+					<LabelList
+						position="top"
+						offset={12}
+						className="fill-foreground"
+						fontSize={12}
+					/>
+				</Area>
+				<Brush
+					dataKey="date"
+					height={30}
+					stroke={chartConfig[primarySensor]?.color}
+					tickFormatter={(v) => new Date(v).toLocaleDateString("id-ID")}
+				/>
+				<ChartLegend content={<ChartLegendContent />} />
+			</AreaChart>
+		</ChartContainer>
+	);
+}
+
+// Komponen rekomendasi
 function RecommendationBox({ recommendation }) {
 	const statusClasses = {
 		normal: {
@@ -797,31 +544,19 @@ function RecommendationBox({ recommendation }) {
 			icon: "text-slate-500",
 		},
 	};
+
 	const { icon: Icon, text, title, status } = recommendation;
-	const classes = statusClasses[status];
+	const classes = statusClasses[status] || statusClasses.neutral;
 
 	return (
 		<div
-			className={`mt-6 flex items-start p-4 rounded-lg border ${classes.bg} ${classes.border}`}
+			className={`mt-6 p-4 rounded-lg border ${classes.border} ${classes.bg} ${classes.text}`}
 		>
-			<Icon className={`w-10 h-10 mr-4 mt-1 flex-shrink-0 ${classes.icon}`} />
-			<div className={`${classes.text}`}>
-				<h4 className="font-bold text-lg">{title}</h4>
-				<p className="text-sm leading-relaxed">{text}</p>
+			<div className="flex items-center gap-3">
+				<Icon className={`w-6 h-6 ${classes.icon}`} />
+				<h3 className="text-lg font-semibold">{title}</h3>
 			</div>
-		</div>
-	);
-}
-
-function ChartSkeleton() {
-	return (
-		<div className="space-y-6">
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-				<Skeleton className="h-24 w-full" />
-				<Skeleton className="h-24 w-full" />
-				<Skeleton className="h-24 w-full" />
-			</div>
-			<Skeleton className="h-[450px] w-full mt-6" />
+			<p className="mt-2 text-sm">{text}</p>
 		</div>
 	);
 }

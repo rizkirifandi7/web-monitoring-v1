@@ -6,7 +6,7 @@ import { Card } from "../ui/card"; // Asumsi menggunakan komponen dari shadcn/ui
  * Komponen CardStatus yang disempurnakan secara visual.
  * Menampilkan data statistik dengan indikator status yang jelas.
  */
-const EnhancedCardStatus = ({
+const CardStatus = ({
 	icon: Icon,
 	title,
 	value,
@@ -84,4 +84,4 @@ const EnhancedCardStatus = ({
 	);
 };
 
-export default EnhancedCardStatus;
+export default CardStatus;

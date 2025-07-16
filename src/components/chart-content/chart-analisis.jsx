@@ -1,7 +1,7 @@
 "use client";
 
 import { TrendingUp } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, LabelList, LineChart, XAxis, YAxis } from "recharts";
 import {
 	Card,
 	CardContent,
@@ -84,7 +84,14 @@ export function ChartAnalisis({ data, loading, sensorLabel }) {
 									strokeWidth: 2,
 									fill: "white",
 								}}
-							/>
+							>
+								<LabelList
+									dataKey={sensorLabel || "value"}
+									position="top"
+									fill="var(--color-desktop)"
+									fontSize={12}
+								/>
+							</Area>
 						</AreaChart>
 					</ChartContainer>
 				)}

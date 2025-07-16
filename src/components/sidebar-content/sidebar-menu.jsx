@@ -35,9 +35,9 @@ export function AppSidebar({ ...props }) {
 		navMain: [
 			{
 				title: "Dashboard",
-				url: "/dashboard/realtime-monitoring",
+				url: "/dashboard/home-monitoring",
 				icon: SquareTerminal,
-				isActive: pathname === "/dashboard/realtime-monitoring",
+				isActive: pathname === "/dashboard/home-monitoring",
 			},
 			{
 				title: "Analisis Data",

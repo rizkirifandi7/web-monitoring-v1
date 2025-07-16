@@ -49,6 +49,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
+import useSWR from "swr";
 
 // --- Definisi Kolom yang Ditingkatkan ---
 // Menambahkan kemampuan sorting pada header
@@ -93,44 +94,39 @@ export const columns = [
 	{ accessorKey: "water_level", header: "Level Air" },
 ];
 
+const fetcher = (url) => fetch(url).then((res) => res.json());
+
 // --- Komponen Utama Tabel ---
 export function TableHistori() {
-	const [data, setData] = useState([]);
-	const [sorting, setSorting] = useState([]);
+	const {
+		data: swrData,
+		error,
+		isLoading,
+	} = useSWR("/api/sensor-data?type=all", fetcher);
+
+	const [sorting, setSorting] = useState([
+		{ id: "time", desc: true }, // default: waktu terbaru di atas
+	]);
 	const [columnFilters, setColumnFilters] = useState([]);
 	const [columnVisibility, setColumnVisibility] = useState({});
 	const [globalFilter, setGlobalFilter] = useState("");
-	const [loading, setLoading] = useState(true);
 
-	// Fetch data
-	useEffect(() => {
-		async function fetchData() {
-			setLoading(true);
-			try {
-				const res = await fetch(
-					"http://localhost:3000/api/sensor-data?type=all"
-				);
-				const json = await res.json();
-				const merged = json.map((item) => ({
-					time: item.date,
-					temperature: item.temperature ?? "N/A",
-					humidity: item.humidity ?? "N/A",
-					ph: item.ph ?? "N/A",
-					light: item.light ?? "N/A",
-					ec: item.ec ?? "N/A",
-					water_temp: item.water_temp ?? "N/A",
-					water_level: item.water_level ?? "N/A",
-				}));
-				setData(merged);
-			} catch (error) {
-				console.error("Failed to fetch data:", error);
-				// Bisa ditambahkan state untuk menampilkan pesan error di UI
-			} finally {
-				setLoading(false);
-			}
-		}
-		fetchData();
-	}, []);
+	// Transform data dari SWR
+	const data = React.useMemo(() => {
+		if (!swrData?.data) return [];
+		return swrData.data
+			.map((item) => ({
+				time: item.date,
+				temperature: item.temperature ?? "N/A",
+				humidity: item.humidity ?? "N/A",
+				ph: item.ph ?? "N/A",
+				light: item.light ?? "N/A",
+				ec: item.ec ?? "N/A",
+				water_temp: item.water_temp ?? "N/A",
+				water_level: item.water_level ?? "N/A",
+			}))
+			.sort((a, b) => new Date(b.time) - new Date(a.time)); // urutkan terbaru di atas
+	}, [swrData]);
 
 	const table = useReactTable({
 		data,
@@ -150,38 +146,6 @@ export function TableHistori() {
 		getPaginationRowModel: getPaginationRowModel(),
 		getSortedRowModel: getSortedRowModel(),
 	});
-
-	// Fungsi untuk mengunduh CSV dari data yang sedang ditampilkan (sudah terfilter)
-	const downloadCSV = () => {
-		const csvRows = [];
-		// Ambil header yang terlihat
-		const headers = table
-			.getVisibleLeafColumns()
-			.map((col) => col.id)
-			.join(",");
-		csvRows.push(headers);
-
-		// Ambil baris dari model yang sudah difilter dan diurutkan
-		table.getFilteredRowModel().rows.forEach((row) => {
-			const values = row.getVisibleCells().map((cell) => {
-				let value = cell.getValue();
-				// Format tanggal jika perlu
-				if (cell.column.id === "time") {
-					value = `"${new Date(value).toLocaleString("id-ID")}"`;
-				}
-				return value;
-			});
-			csvRows.push(values.join(","));
-		});
-
-		const csvString = csvRows.join("\n");
-		const blob = new Blob([csvString], { type: "text/csv" });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement("a");
-		a.setAttribute("href", url);
-		a.setAttribute("download", "histori_sensor.csv");
-		a.click();
-	};
 
 	return (
 		<Card className="w-full bg-white border shadow-none">
@@ -205,11 +169,6 @@ export function TableHistori() {
 					{/* Filter Tanggal */}
 					<DateRangeFilter column={table.getColumn("time")} />
 					<div className="flex items-center gap-2 ml-auto">
-						{/* Tombol Unduh */}
-						<Button variant="outline" onClick={downloadCSV}>
-							<Download className="mr-2 h-4 w-4" />
-							Unduh
-						</Button>
 						{/* Tombol Kolom */}
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
@@ -256,7 +215,7 @@ export function TableHistori() {
 							))}
 						</TableHeader>
 						<TableBody>
-							{loading ? (
+							{isLoading ? (
 								// Skeleton Loading
 								Array.from({ length: 5 }).map((_, i) => (
 									<TableRow key={i}>

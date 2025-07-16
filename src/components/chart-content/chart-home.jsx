@@ -1,7 +1,6 @@
 "use client";
 
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-
 import {
 	Card,
 	CardContent,
@@ -16,51 +15,20 @@ import {
 	ChartTooltip,
 	ChartTooltipContent,
 } from "@/components/ui/chart";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import { useEffect, useState, useMemo } from "react";
+import useSWR from "swr";
+
+// Fetcher function for SWR
+const fetcher = (url) => fetch(url).then((res) => res.json());
 
 export function ChartHome() {
-	const [timeRange, setTimeRange] = useState("90d");
-	const [sensorData, setSensorData] = useState([]);
-	const [loading, setLoading] = useState(true);
+	// Use SWR for data fetching (only last 10 entries)
+	const { data, error, isLoading } = useSWR(
+		"/api/sensor-data?type=all&limit=10",
+		fetcher,
+		{ refreshInterval: 5000 } // Poll every 5 seconds
+	);
 
-	useEffect(() => {
-		async function fetchData() {
-			setLoading(true);
-			try {
-				const res = await fetch("/api/sensor-data?type=all");
-				const json = await res.json();
-				// Data sudah berupa array of objects, langsung mapping
-				const merged = json.map((item) => ({
-					date: item.date,
-					ph: item.ph,
-					ec: item.ec,
-				}));
-				setSensorData(merged);
-			} catch (e) {
-				setSensorData([]);
-			}
-			setLoading(false);
-		}
-		fetchData();
-	}, []);
-
-	const filteredData = useMemo(() => {
-		if (!sensorData.length) return [];
-		const referenceDate = new Date(sensorData[sensorData.length - 1]?.date);
-		let daysToSubtract = 90;
-		if (timeRange === "30d") daysToSubtract = 30;
-		else if (timeRange === "7d") daysToSubtract = 7;
-		const startDate = new Date(referenceDate);
-		startDate.setDate(startDate.getDate() - daysToSubtract);
-		return sensorData.filter((item) => new Date(item.date) >= startDate);
-	}, [sensorData, timeRange]);
+	const showData = data?.data || [];
 
 	const chartConfig = {
 		ph: { label: "pH Air", color: "var(--chart-1)" },
@@ -73,39 +41,22 @@ export function ChartHome() {
 				<div className="grid flex-1 gap-1">
 					<CardTitle>Real-time Monitoring (pH Air & EC)</CardTitle>
 					<CardDescription>
-						Menampilkan data pH Air & EC dari sensor
+						Menampilkan 10 data terbaru pH Air & EC dari sensor
 					</CardDescription>
 				</div>
-				<Select value={timeRange} onValueChange={setTimeRange}>
-					<SelectTrigger
-						className="hidden w-[160px] rounded-lg sm:ml-auto sm:flex"
-						aria-label="Select a value"
-					>
-						<SelectValue placeholder="Last 3 months" />
-					</SelectTrigger>
-					<SelectContent className="rounded-xl">
-						<SelectItem value="90d" className="rounded-lg">
-							Last 3 months
-						</SelectItem>
-						<SelectItem value="30d" className="rounded-lg">
-							Last 30 days
-						</SelectItem>
-						<SelectItem value="7d" className="rounded-lg">
-							Last 7 days
-						</SelectItem>
-					</SelectContent>
-				</Select>
 			</CardHeader>
 			<CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-				{loading ? (
+				{isLoading ? (
 					<div className="text-center py-10">Loading...</div>
+				) : error ? (
+					<div className="text-center py-10">Error loading data</div>
 				) : (
 					<ChartContainer
 						config={chartConfig}
 						className="aspect-auto h-[250px] w-full"
 					>
 						<AreaChart
-							data={filteredData}
+							data={showData}
 							accessibilityLayer
 							margin={{
 								left: -32,
@@ -152,6 +103,8 @@ export function ChartHome() {
 									return date.toLocaleTimeString("id-ID", {
 										hour: "2-digit",
 										minute: "2-digit",
+										month: "short",
+										day: "numeric",
 									});
 								}}
 							/>
@@ -159,7 +112,6 @@ export function ChartHome() {
 								dataKey="value"
 								tickLine={true}
 								axisLine={true}
-								
 								tickMargin={8}
 								minTickGap={32}
 							/>
@@ -217,7 +169,6 @@ export function ChartHome() {
 									r: 4,
 								}}
 							/>
-
 							<ChartLegend content={<ChartLegendContent />} />
 						</AreaChart>
 					</ChartContainer>

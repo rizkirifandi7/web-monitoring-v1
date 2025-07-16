@@ -28,13 +28,44 @@ const influx = new InfluxDB({
 const queryApi = influx.getQueryApi(CONFIG.INFLUXDB.org);
 
 /**
+ * Mengambil total keseluruhan data dari bucket.
+ * @returns {Promise<number>}
+ */
+async function queryTotalData() {
+	const fluxQuery = `
+    from(bucket: "${CONFIG.INFLUXDB.bucket}")
+      |> range(start: -24h) // Sesuaikan rentang waktu sesuai kebutuhan
+      |> filter(fn: (r) => r._measurement == "${CONFIG.INFLUXDB.measurement}")
+      |> count()
+  `;
+
+	return new Promise((resolve, reject) => {
+		queryApi.queryRows(fluxQuery, {
+			next(row, tableMeta) {
+				const o = tableMeta.toObject(row);
+				resolve(o._value); // Mengembalikan total data
+			},
+			error(error) {
+				console.error("InfluxDB Query Error:", error);
+				reject(error);
+			},
+			complete() {
+				resolve(0); // Jika tidak ada data, kembalikan 0
+			},
+		});
+	});
+}
+
+/**
  * Mengambil data semua sensor dalam format tabel (timestamp, sensor1, sensor2, ...)
  * Menggunakan pivot() untuk efisiensi di sisi database.
  * @param {string} range - Rentang waktu Flux (e.g., "-1h", "-24h")
- * @returns {Promise<Array<Object>>}
+ * @returns {Promise<{data: Array<Object>, total: number}>}
  */
-async function queryAllSensors(range) {
-	// Query tunggal untuk mengambil semua sensor dan mem-pivotnya.
+async function queryAllSensors(range, limit = 0, page = 1) {
+	const offset = (page - 1) * limit;
+
+	// Jika limit adalah 0, ambil semua data
 	const fluxQuery = `
     from(bucket: "${CONFIG.INFLUXDB.bucket}")
       |> range(start: ${range})
@@ -44,6 +75,7 @@ async function queryAllSensors(range) {
 			).join(", ")}]))
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
       |> sort(columns: ["_time"])
+      ${limit > 0 ? `|> limit(n: ${limit}, offset: ${offset})` : ""}
   `;
 
 	return new Promise((resolve, reject) => {
@@ -51,7 +83,6 @@ async function queryAllSensors(range) {
 		queryApi.queryRows(fluxQuery, {
 			next(row, tableMeta) {
 				const o = tableMeta.toObject(row);
-				// Mengganti nama _time menjadi date untuk konsistensi output
 				const formattedObject = { date: o._time, ...o };
 				delete formattedObject._time;
 				delete formattedObject._start;
@@ -75,7 +106,6 @@ async function queryAllSensors(range) {
  * @returns {Promise<Object>}
  */
 async function queryLatestSensors() {
-	// Query tunggal untuk mengambil nilai terakhir dari semua sensor.
 	const fluxQuery = `
     from(bucket: "${CONFIG.INFLUXDB.bucket}")
       |> range(start: -1h) 
@@ -102,13 +132,11 @@ async function queryLatestSensors() {
 					resolve({});
 					return;
 				}
-				// Ambil data waktu terakhir dari query terpisah yang lebih efisien
 				const timeQuery = `
           from(bucket: "${CONFIG.INFLUXDB.bucket}")
             |> range(start: -1h)
             |> filter(fn: (r) => r._measurement == "${CONFIG.INFLUXDB.measurement}")
-            |> last()
-            // 👇 SOLUSI: Tukar urutan, panggil first() SEBELUM membuang kolom lain dengan keep()
+            |> last() 
             |> first() 
             |> keep(columns: ["_time"])
         `;
@@ -123,7 +151,6 @@ async function queryLatestSensors() {
 					},
 					error: reject,
 					complete: () => {
-						// Fallback jika query waktu gagal, kembalikan hasil tanpa tanggal
 						if (results[0] && !results[0].date) resolve(results[0]);
 					},
 				});
@@ -135,8 +162,9 @@ async function queryLatestSensors() {
 export async function GET(req) {
 	const { searchParams } = new URL(req.url);
 	const type = searchParams.get("type") || "latest";
-	// Klien bisa menentukan rentang, dengan default -24h
 	const range = searchParams.get("range") || "-24h";
+	const limit = parseInt(searchParams.get("limit") || "10", 10);
+	const page = parseInt(searchParams.get("page") || "1", 10);
 
 	try {
 		if (type === "latest") {
@@ -145,9 +173,9 @@ export async function GET(req) {
 		}
 
 		if (type === "all") {
-			// Tidak perlu validasi sensor, queryAllSensors sudah mengambil semua yang ada di CONFIG
-			const allData = await queryAllSensors(range);
-			return NextResponse.json(allData);
+			const totalData = await queryTotalData(); // Mengambil total keseluruhan data
+			const allData = await queryAllSensors(range, limit, page);
+			return NextResponse.json({ data: allData, total: totalData, page }); // Mengembalikan data, total, dan halaman
 		}
 
 		return NextResponse.json(

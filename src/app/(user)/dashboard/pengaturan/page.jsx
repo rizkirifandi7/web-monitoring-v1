@@ -1,7 +1,8 @@
 import React from "react";
+import { PengaturanForm } from "@/components/form-content/form-pengaturan";
 
 const PagePengaturan = () => {
-	return <div>PagePengaturan</div>;
+	return <PengaturanForm />;
 };
 
 export default PagePengaturan;
