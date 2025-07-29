@@ -135,20 +135,6 @@ const chartConfig = {
 			high: "Gunakan pendingin air (water chiller) atau tambahkan botol es beku ke dalam reservoir.",
 		},
 	},
-	water_level: {
-		label: "Level Air (cm)",
-		color: "#0ea5e9", // Contoh warna biru langit
-		icon: Droplets, // Bisa gunakan icon lain jika ada
-		thresholds: { min: 5, max: 15 }, // Asumsi rentang aman
-		impact: {
-			low: "berisiko membuat pompa berjalan kering dan merusak akar karena kekeringan.",
-			high: "dapat mengurangi aerasi pada akar dan memicu pembusukan.",
-		},
-		solution: {
-			low: "Tambahkan air nutrisi ke dalam reservoir hingga mencapai level optimal.",
-			high: "Gunakan sebagian air untuk menyiram tanaman lain atau kurangi volume jika perlu.",
-		},
-	},
 };
 
 const SENSOR_OPTIONS = Object.entries(chartConfig).map(
@@ -495,14 +481,7 @@ function ChartVisualization({ data, primarySensor }) {
 					strokeWidth={2.5}
 					dot={true}
 					activeDot={{ r: 6 }}
-				>
-					<LabelList
-						position="top"
-						offset={12}
-						className="fill-foreground"
-						fontSize={12}
-					/>
-				</Area>
+				/>
 				<Brush
 					dataKey="date"
 					height={30}

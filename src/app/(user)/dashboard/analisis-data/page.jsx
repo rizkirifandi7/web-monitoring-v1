@@ -25,7 +25,7 @@ const AnalisisPage = () => {
 		"/api/sensor-data?type=all&limit=100", // Fetch the latest 100 entries
 		fetcher,
 		{
-			refreshInterval: 5000, // Refresh every 5 seconds
+			refreshInterval: 2000, // Refresh every 5 seconds
 		}
 	);
 

@@ -1,7 +1,15 @@
 "use client";
 
 import { TrendingUp } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, LabelList, LineChart, XAxis, YAxis } from "recharts";
+import {
+	Area,
+	AreaChart,
+	CartesianGrid,
+	LabelList,
+	LineChart,
+	XAxis,
+	YAxis,
+} from "recharts";
 import {
 	Card,
 	CardContent,
@@ -40,7 +48,11 @@ export function ChartAnalisis({ data, loading, sensorLabel }) {
 	}, [data, sensorLabel]);
 
 	return (
-		<Card className={"w-full h-full shadow-none transition-all duration-300 hover:shadow-lg"}>
+		<Card
+			className={
+				"w-full h-full shadow-none transition-all duration-300 hover:shadow-lg"
+			}
+		>
 			<CardHeader>
 				<CardTitle>{sensorLabel}</CardTitle>
 				<CardDescription>
@@ -84,14 +96,7 @@ export function ChartAnalisis({ data, loading, sensorLabel }) {
 									strokeWidth: 2,
 									fill: "white",
 								}}
-							>
-								<LabelList
-									dataKey={sensorLabel || "value"}
-									position="top"
-									fill="var(--color-desktop)"
-									fontSize={12}
-								/>
-							</Area>
+							/>
 						</AreaChart>
 					</ChartContainer>
 				)}

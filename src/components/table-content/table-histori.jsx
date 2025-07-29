@@ -12,9 +12,12 @@ import {
 import {
 	ArrowUpDown,
 	ChevronDown,
-	Download,
 	Calendar as CalendarIcon,
 } from "lucide-react";
+import { format } from "date-fns";
+import { id } from "date-fns/locale";
+import { DateRange } from "react-day-picker"; // Import DateRange
+import useSWR from "swr";
 
 // Impor komponen UI dari shadcn/ui atau sejenisnya
 import { Button } from "@/components/ui/button";
@@ -46,10 +49,7 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { format } from "date-fns";
-import { id } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
-import useSWR from "swr";
 
 export const columns = [
 	{
@@ -65,38 +65,98 @@ export const columns = [
 		),
 		cell: ({ row }) => (
 			<div className="pl-4">
-				{new Date(row.getValue("time")).toLocaleString("id-ID")}
+				{new Date(row.getValue("time")).toLocaleString("id-ID", {
+					year: "numeric",
+					month: "long",
+					day: "numeric",
+					hour: "2-digit",
+					minute: "2-digit",
+					second: "2-digit",
+				})}
 			</div>
 		),
+		// --- FUNGSI FILTER DIPERBARUI UNTUK RANGE ---
 		filterFn: (row, columnId, filterValue) => {
-			if (!filterValue) return true;
-			const date = new Date(row.getValue(columnId));
-			const selected = new Date(filterValue);
-			return (
-				date.getFullYear() === selected.getFullYear() &&
-				date.getMonth() === selected.getMonth() &&
-				date.getDate() === selected.getDate()
-			);
+			const rowDate = new Date(row.getValue(columnId));
+			const fromDate = filterValue?.from;
+			const toDate = filterValue?.to;
+
+			// Jika tidak ada tanggal awal, jangan filter (tampilkan semua)
+			if (!fromDate) {
+				return true;
+			}
+
+			// Jika hanya tanggal awal yang dipilih, filter untuk hari itu saja
+			if (fromDate && !toDate) {
+				return (
+					rowDate.getFullYear() === fromDate.getFullYear() &&
+					rowDate.getMonth() === fromDate.getMonth() &&
+					rowDate.getDate() === fromDate.getDate()
+				);
+			}
+
+			// Jika rentang tanggal lengkap dipilih
+			if (fromDate && toDate) {
+				// Atur 'from' ke awal hari dan 'to' ke akhir hari agar inklusif
+				const from = new Date(fromDate);
+				from.setHours(0, 0, 0, 0);
+				const to = new Date(toDate);
+				to.setHours(23, 59, 59, 999);
+				return rowDate >= from && rowDate <= to;
+			}
+
+			return true;
+		},
+	},
+	// ... Definisi kolom lainnya tetap sama (temperature, humidity, dst.)
+	{
+		accessorKey: "temperature",
+		header: "Suhu (°C)",
+		cell: ({ row }) => {
+			const value = parseFloat(row.getValue("temperature"));
+			return !isNaN(value) ? value.toFixed(2) : "N/A";
 		},
 	},
 	{
-		accessorKey: "temperature",
-		header: ({ column }) => (
-			<Button
-				variant="ghost"
-				onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-			>
-				Suhu (°C)
-				<ArrowUpDown className="ml-2 h-4 w-4" />
-			</Button>
-		),
+		accessorKey: "humidity",
+		header: "Kelembapan (%)",
+		cell: ({ row }) => {
+			const value = parseFloat(row.getValue("humidity"));
+			return !isNaN(value) ? value.toFixed(2) : "N/A";
+		},
 	},
-	{ accessorKey: "humidity", header: "Kelembapan (%)" },
-	{ accessorKey: "ph", header: "pH" },
-	{ accessorKey: "light", header: "Cahaya" },
-	{ accessorKey: "ec", header: "EC" },
-	{ accessorKey: "water_temp", header: "Suhu Air (°C)" },
-	{ accessorKey: "water_level", header: "Level Air" },
+	{
+		accessorKey: "ph",
+		header: "pH",
+		cell: ({ row }) => {
+			const value = parseFloat(row.getValue("ph"));
+			return !isNaN(value) ? value.toFixed(2) : "N/A";
+		},
+	},
+	{
+		accessorKey: "light",
+		header: "Cahaya",
+		cell: ({ row }) => {
+			const value = parseFloat(row.getValue("light"));
+			return !isNaN(value) ? value.toFixed(2) : "N/A";
+		},
+	},
+	{
+		accessorKey: "ec",
+		header: "EC",
+		cell: ({ row }) => {
+			const value = parseFloat(row.getValue("ec"));
+			return !isNaN(value) ? value.toFixed(2) : "N/A";
+		},
+	},
+	{
+		accessorKey: "water_temp",
+		header: "Suhu Air (°C)",
+		cell: ({ row }) => {
+			const value = parseFloat(row.getValue("water_temp"));
+			return !isNaN(value) ? value.toFixed(2) : "N/A";
+		},
+	},
 ];
 
 const fetcher = (url) => fetch(url).then((res) => res.json());
@@ -107,16 +167,15 @@ export function TableHistori() {
 		data: swrData,
 		error,
 		isLoading,
-	} = useSWR("/api/sensor-data?type=all", fetcher);
+	} = useSWR("/api/sensor-data?type=all", fetcher, {
+		refreshInterval: 2000,
+	});
 
-	const [sorting, setSorting] = useState([
-		{ id: "time", desc: true }, // default: waktu terbaru di atas
-	]);
+	const [sorting, setSorting] = useState([{ id: "time", desc: true }]);
 	const [columnFilters, setColumnFilters] = useState([]);
 	const [columnVisibility, setColumnVisibility] = useState({});
 	const [globalFilter, setGlobalFilter] = useState("");
 
-	// Transform data dari SWR
 	const data = React.useMemo(() => {
 		if (!swrData?.data) return [];
 		return swrData.data
@@ -130,7 +189,7 @@ export function TableHistori() {
 				water_temp: item.water_temp ?? "N/A",
 				water_level: item.water_level ?? "N/A",
 			}))
-			.sort((a, b) => new Date(b.time) - new Date(a.time)); // urutkan terbaru di atas
+			.sort((a, b) => new Date(b.time) - new Date(a.time));
 	}, [swrData]);
 
 	const table = useReactTable({
@@ -162,7 +221,7 @@ export function TableHistori() {
 					Cari, filter, dan unduh rekaman data dari sensor secara lengkap.
 				</CardDescription>
 			</CardHeader>
-			<CardContent className="p-4 py-0">
+			<CardContent className="p-4 pt-4">
 				{/* --- Toolbar Terintegrasi --- */}
 				<div className="flex flex-col sm:flex-row items-center gap-4 pb-4">
 					<Input
@@ -221,8 +280,7 @@ export function TableHistori() {
 						</TableHeader>
 						<TableBody>
 							{isLoading ? (
-								// Skeleton Loading
-								Array.from({ length: 5 }).map((_, i) => (
+								Array.from({ length: 10 }).map((_, i) => (
 									<TableRow key={i}>
 										{columns.map((col) => (
 											<TableCell key={col.accessorKey}>
@@ -262,7 +320,7 @@ export function TableHistori() {
 				</div>
 
 				{/* --- Paginasi --- */}
-				<div className="flex items-center justify-center space-x-2 pt-4">
+				<div className="flex items-center justify-end space-x-2 pt-4">
 					<Button
 						variant="outline"
 						size="sm"
@@ -285,15 +343,12 @@ export function TableHistori() {
 	);
 }
 
+// --- KOMPONEN FILTER DIPERBARUI UNTUK RANGE ---
 function DateRangeFilter({ column }) {
 	const [date, setDate] = useState(undefined);
 
 	useEffect(() => {
-		if (date) {
-			column?.setFilterValue(date);
-		} else {
-			column?.setFilterValue(undefined);
-		}
+		column?.setFilterValue(date);
 	}, [date, column]);
 
 	return (
@@ -301,23 +356,31 @@ function DateRangeFilter({ column }) {
 			<PopoverTrigger asChild>
 				<Button
 					variant={"outline"}
-					className="w-full sm:w-[180px] justify-start text-left font-normal"
+					className="w-full sm:w-[260px] justify-start text-left font-normal"
 				>
 					<CalendarIcon className="mr-2 h-4 w-4" />
-					{date ? (
-						format(date, "d LLL y", { locale: id })
+					{date?.from ? (
+						date.to ? (
+							<>
+								{format(date.from, "d LLL y", { locale: id })} -{" "}
+								{format(date.to, "d LLL y", { locale: id })}
+							</>
+						) : (
+							format(date.from, "d LLL y", { locale: id })
+						)
 					) : (
-						<span>Pilih tanggal</span>
+						<span>Pilih rentang tanggal</span>
 					)}
 				</Button>
 			</PopoverTrigger>
 			<PopoverContent className="w-auto p-0" align="start">
 				<Calendar
-					mode="single"
+					mode="range" // Ganti mode menjadi "range"
 					selected={date}
 					onSelect={setDate}
 					initialFocus
 					locale={id}
+					numberOfMonths={2} // Tampilkan 2 bulan untuk navigasi lebih mudah
 				/>
 			</PopoverContent>
 		</Popover>

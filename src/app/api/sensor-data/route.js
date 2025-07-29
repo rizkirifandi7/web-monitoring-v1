@@ -136,7 +136,7 @@ async function queryLatestSensors() {
 export async function GET(req) {
 	const { searchParams } = new URL(req.url);
 	const type = searchParams.get("type") || "latest";
-	const range = searchParams.get("range") || "-30d";
+	const range = searchParams.get("range") || "-10d";
 	const limit = parseInt(searchParams.get("limit") || "100", 10);
 	const sensor = searchParams.get("sensor"); // opsional
 

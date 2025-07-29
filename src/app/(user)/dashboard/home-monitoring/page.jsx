@@ -21,7 +21,7 @@ const HomePage = () => {
 		"/api/sensor-data?type=latest",
 		fetcher,
 		{
-			refreshInterval: 5000,
+			refreshInterval: 2000,
 		}
 	);
 
