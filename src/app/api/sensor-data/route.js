@@ -28,54 +28,28 @@ const influx = new InfluxDB({
 const queryApi = influx.getQueryApi(CONFIG.INFLUXDB.org);
 
 /**
- * Mengambil total keseluruhan data dari bucket.
- * @returns {Promise<number>}
- */
-async function queryTotalData() {
-	const fluxQuery = `
-    from(bucket: "${CONFIG.INFLUXDB.bucket}")
-      |> range(start: -24h) // Sesuaikan rentang waktu sesuai kebutuhan
-      |> filter(fn: (r) => r._measurement == "${CONFIG.INFLUXDB.measurement}")
-      |> count()
-  `;
-
-	return new Promise((resolve, reject) => {
-		queryApi.queryRows(fluxQuery, {
-			next(row, tableMeta) {
-				const o = tableMeta.toObject(row);
-				resolve(o._value); // Mengembalikan total data
-			},
-			error(error) {
-				console.error("InfluxDB Query Error:", error);
-				reject(error);
-			},
-			complete() {
-				resolve(0); // Jika tidak ada data, kembalikan 0
-			},
-		});
-	});
-}
-
-/**
- * Mengambil data semua sensor dalam format tabel (timestamp, sensor1, sensor2, ...)
- * Menggunakan pivot() untuk efisiensi di sisi database.
+ * Mengambil data semua sensor atau satu sensor dalam format tabel (timestamp, sensor1, sensor2, ...)
  * @param {string} range - Rentang waktu Flux (e.g., "-1h", "-24h")
- * @returns {Promise<{data: Array<Object>, total: number}>}
+ * @param {number} limit - Batas jumlah data
+ * @param {string} sensor - Nama sensor (opsional)
+ * @returns {Promise<Array<Object>>}
  */
-async function queryAllSensors(range, limit = 0, page = 1) {
-	const offset = (page - 1) * limit;
+async function queryAllSensors(range, limit = 0, sensor = null) {
+	let fields = CONFIG.SENSORS;
+	if (sensor && CONFIG.SENSORS.includes(sensor)) {
+		fields = [sensor];
+	}
 
-	// Jika limit adalah 0, ambil semua data
 	const fluxQuery = `
     from(bucket: "${CONFIG.INFLUXDB.bucket}")
       |> range(start: ${range})
       |> filter(fn: (r) => r._measurement == "${CONFIG.INFLUXDB.measurement}")
-      |> filter(fn: (r) => contains(value: r._field, set: [${CONFIG.SENSORS.map(
-				(s) => `"${s}"`
-			).join(", ")}]))
+      |> filter(fn: (r) => contains(value: r._field, set: [${fields
+				.map((s) => `"${s}"`)
+				.join(", ")}]))
       |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-      |> sort(columns: ["_time"])
-      ${limit > 0 ? `|> limit(n: ${limit}, offset: ${offset})` : ""}
+			|> sort(columns: ["_time"], desc: true)
+			${limit > 0 ? `|> limit(n: ${limit})` : ""}
   `;
 
 	return new Promise((resolve, reject) => {
@@ -95,7 +69,7 @@ async function queryAllSensors(range, limit = 0, page = 1) {
 				reject(error);
 			},
 			complete() {
-				resolve(results);
+				resolve(results.reverse());
 			},
 		});
 	});
@@ -162,9 +136,9 @@ async function queryLatestSensors() {
 export async function GET(req) {
 	const { searchParams } = new URL(req.url);
 	const type = searchParams.get("type") || "latest";
-	const range = searchParams.get("range") || "-24h";
-	const limit = parseInt(searchParams.get("limit") || "10", 10);
-	const page = parseInt(searchParams.get("page") || "1", 10);
+	const range = searchParams.get("range") || "-30d";
+	const limit = parseInt(searchParams.get("limit") || "100", 10);
+	const sensor = searchParams.get("sensor"); // opsional
 
 	try {
 		if (type === "latest") {
@@ -173,9 +147,8 @@ export async function GET(req) {
 		}
 
 		if (type === "all") {
-			const totalData = await queryTotalData(); // Mengambil total keseluruhan data
-			const allData = await queryAllSensors(range, limit, page);
-			return NextResponse.json({ data: allData, total: totalData, page }); // Mengembalikan data, total, dan halaman
+			const allData = await queryAllSensors(range, limit, sensor);
+			return NextResponse.json({ data: allData });
 		}
 
 		return NextResponse.json(

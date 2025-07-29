@@ -2,9 +2,9 @@ const { InfluxDB, Point } = require("@influxdata/influxdb-client");
 
 const CONFIG = {
 	INFLUXDB: {
-		url: "http://localhost:8086",
+		url: "https://us-east-1-1.aws.cloud2.influxdata.com",
 		token:
-			"mpb6-mBnTxyFMOdvaVBAXxdfFvB_lntTuQZAVNDiXrtWcnmIZSMBwO9XAA8EzwiJwfqfgb5mpfcft1yLEVLeyw==",
+			"Jx2QboZxLNDfx89hSALwgqbLgPpPlciX_4eDFfdoUZauJymISL8BSPS5nTz-fS_FYhDo4xDEdTAnGvH8zflfQg==",
 		org: "zailer",
 		bucket: "sensor-baru",
 		measurement: "sensor_data",

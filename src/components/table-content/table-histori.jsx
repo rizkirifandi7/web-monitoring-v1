@@ -51,11 +51,7 @@ import { id } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 import useSWR from "swr";
 
-// --- Definisi Kolom yang Ditingkatkan ---
-// Menambahkan kemampuan sorting pada header
 export const columns = [
-	// Kolom bisa ditambahkan untuk checkbox jika diperlukan
-	// { id: 'select', header: ... },
 	{
 		accessorKey: "time",
 		header: ({ column }) => (
@@ -72,8 +68,17 @@ export const columns = [
 				{new Date(row.getValue("time")).toLocaleString("id-ID")}
 			</div>
 		),
+		filterFn: (row, columnId, filterValue) => {
+			if (!filterValue) return true;
+			const date = new Date(row.getValue(columnId));
+			const selected = new Date(filterValue);
+			return (
+				date.getFullYear() === selected.getFullYear() &&
+				date.getMonth() === selected.getMonth() &&
+				date.getDate() === selected.getDate()
+			);
+		},
 	},
-	// Contoh kolom lain dengan sorting
 	{
 		accessorKey: "temperature",
 		header: ({ column }) => (
@@ -280,14 +285,12 @@ export function TableHistori() {
 	);
 }
 
-// Komponen helper untuk filter tanggal
 function DateRangeFilter({ column }) {
 	const [date, setDate] = useState(undefined);
 
 	useEffect(() => {
-		if (date?.from && date?.to) {
-			// Set filter ke kolom 'time'
-			column?.setFilterValue([date.from, date.to]);
+		if (date) {
+			column?.setFilterValue(date);
 		} else {
 			column?.setFilterValue(undefined);
 		}
@@ -298,26 +301,19 @@ function DateRangeFilter({ column }) {
 			<PopoverTrigger asChild>
 				<Button
 					variant={"outline"}
-					className="w-full sm:w-[280px] justify-start text-left font-normal"
+					className="w-full sm:w-[180px] justify-start text-left font-normal"
 				>
 					<CalendarIcon className="mr-2 h-4 w-4" />
-					{date?.from ? (
-						date.to ? (
-							<>
-								{format(date.from, "d LLL y", { locale: id })} -{" "}
-								{format(date.to, "d LLL y", { locale: id })}
-							</>
-						) : (
-							format(date.from, "d LLL y", { locale: id })
-						)
+					{date ? (
+						format(date, "d LLL y", { locale: id })
 					) : (
-						<span>Pilih rentang tanggal</span>
+						<span>Pilih tanggal</span>
 					)}
 				</Button>
 			</PopoverTrigger>
 			<PopoverContent className="w-auto p-0" align="start">
 				<Calendar
-					mode="range"
+					mode="single"
 					selected={date}
 					onSelect={setDate}
 					initialFocus

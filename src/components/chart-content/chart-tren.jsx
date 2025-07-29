@@ -222,24 +222,23 @@ function getRecommendation(sensorKey, value, trend) {
 		icon: status === "normal" ? CheckCircle2 : AlertTriangle,
 	};
 }
+const fetcher = (url) => fetch(url).then((res) => res.json());
 
 // Komponen utama ChartTren
 export function ChartTren() {
 	const [primarySensor, setPrimarySensor] = useState("temperature");
-	const [timeRange, setTimeRange] = useState("30d");
+	const [timeRange, setTimeRange] = useState("7d");
 	const { data: allData, error } = useSWR(
-		"/api/sensor-data?type=all&limit=100"
-	); // Menggunakan SWR untuk fetch data
+		`/api/sensor-data?type=all&sensor=${primarySensor}&range=-${timeRange}`,
+		fetcher
+	); // Fetch data dengan SWR
 	const loading = !allData && !error; // Menentukan loading state
 
 	const { filteredData, summaryStats, insights } = useMemo(() => {
 		if (!allData || !allData.data || !allData.data.length)
 			return { filteredData: [], summaryStats: {}, insights: {} };
 
-		const startDate = getStartDate(timeRange);
-		const dataInRange = allData.data.filter(
-			(item) => new Date(item.date) >= startDate
-		);
+		const dataInRange = allData.data;
 		const primaryValues = dataInRange
 			.map((item) => item[primarySensor])
 			.filter((v) => v != null);
@@ -262,7 +261,7 @@ export function ChartTren() {
 					: "N/A",
 		};
 
-		// Hitung tren data
+		// Tren
 		let trendData = null;
 		if (primaryValues.length > 1) {
 			const first = primaryValues[0];
@@ -284,7 +283,7 @@ export function ChartTren() {
 			summaryStats: stats,
 			insights: { trend: trendData },
 		};
-	}, [allData, timeRange, primarySensor]);
+	}, [allData, primarySensor]);
 
 	const recommendation = getRecommendation(
 		primarySensor,
@@ -557,6 +556,20 @@ function RecommendationBox({ recommendation }) {
 				<h3 className="text-lg font-semibold">{title}</h3>
 			</div>
 			<p className="mt-2 text-sm">{text}</p>
+		</div>
+	);
+}
+
+function ChartSkeleton() {
+	return (
+		<div className="flex flex-col gap-4 w-full">
+			<Skeleton className="h-8 w-1/3 rounded-lg" />
+			<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+				<Skeleton className="h-12 w-full rounded-lg" />
+				<Skeleton className="h-12 w-full rounded-lg" />
+				<Skeleton className="h-12 w-full rounded-lg" />
+			</div>
+			<Skeleton className="h-[400px] w-full rounded-lg" />
 		</div>
 	);
 }
