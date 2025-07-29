@@ -36,7 +36,7 @@ export const formatSensorData = (sensorData) => {
 						formatted[key] = value.toFixed(0);
 					} else {
 						// Format angka lain menjadi string dengan 2 angka desimal.
-						formatted[key] = value.toFixed(2);
+						formatted[key] = value.toFixed(1);
 					}
 				} else {
 					// Jika bukan angka (misalnya: tanggal, string), biarkan apa adanya.

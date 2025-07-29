@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import useSWR from "swr"; // Import SWR
+import useSWR from "swr";
 import { ChartHome } from "@/components/chart-content/chart-home";
 import {
 	Card,
@@ -28,6 +28,7 @@ const HomePage = () => {
 	if (error) return <div>Error loading data</div>;
 
 	if (!sensorData) {
+		// Tampilan skeleton loading tetap sama
 		return (
 			<Card className="flex w-full flex-col shadow-none">
 				<CardHeader className="p-4 border-b py-0">
@@ -39,7 +40,7 @@ const HomePage = () => {
 						real-time.
 					</CardDescription>
 				</CardHeader>
-				<CardContent className="flex flex-col gap-4 px-4">
+				<CardContent className="flex flex-col gap-4 px-4 pt-4">
 					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 						{Array.from({ length: 2 }).map((_, i) => (
 							<Skeleton key={i} className="h-24 w-full rounded-lg" />
@@ -64,6 +65,7 @@ const HomePage = () => {
 		(item) => !highlightKeys.includes(item.key)
 	);
 
+	// Gunakan fungsi formatSensorData untuk memproses data dari SWR
 	const formattedSensorData = formatSensorData(sensorData);
 
 	return (
@@ -77,7 +79,7 @@ const HomePage = () => {
 					real-time.
 				</CardDescription>
 			</CardHeader>
-			<CardContent className="flex flex-col gap-4 px-4">
+			<CardContent className="flex flex-col gap-4 px-4 pt-4">
 				<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<RenderSensorCards
 						sensors={highlightSensors}
@@ -86,7 +88,10 @@ const HomePage = () => {
 					/>
 				</div>
 				<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-					<RenderSensorCards sensors={otherSensors} sensorData={sensorData} />
+					<RenderSensorCards
+						sensors={otherSensors}
+						sensorData={formattedSensorData}
+					/>
 				</div>
 				<ChartHome />
 			</CardContent>
