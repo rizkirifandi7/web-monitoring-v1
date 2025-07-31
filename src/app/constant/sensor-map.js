@@ -9,7 +9,7 @@ import {
 
 export const sensorMap = [
 	{ key: "ph", title: "pH Air", icon: FlaskConical, unit: "" },
-	{ key: "ec", title: "EC Nutrisi", icon: Zap, unit: "μS/cm" },
+	{ key: "ec", title: "EC Nutrisi", icon: Zap, unit: "mS/cm" },
 	{ key: "temperature", title: "Suhu Udara", icon: Thermometer, unit: "°C" },
 	{ key: "humidity", title: "Kelembapan", icon: Droplets, unit: "%" },
 	{ key: "water_temp", title: "Suhu Air", icon: GlassWater, unit: "°C" },
@@ -32,7 +32,7 @@ export const DEFAULT_MATRIKS = [
 		title: "Electrical Conductivity",
 		subtitle: "Kadar nutrisi dalam air",
 		key: "ec",
-		unit: "μS/cm",
+		unit: "mS/cm",
 		min: 1.2,
 		max: 2.5,
 	},
