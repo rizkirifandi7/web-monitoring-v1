@@ -22,7 +22,7 @@ const fetcher = (url) => fetch(url).then((res) => res.json());
 
 const AnalisisPage = () => {
 	const { data, error } = useSWR(
-		"/api/sensor-data?type=all&limit=100", // Fetch the latest 100 entries
+		"/api/sensor-data/all", // Fetch the latest 100 entries
 		fetcher,
 		{
 			refreshInterval: 2000, // Refresh every 5 seconds

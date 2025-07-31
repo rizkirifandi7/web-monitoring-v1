@@ -1,25 +1,28 @@
+// File: components/SensorDataComponents.js (atau path yang sesuai)
+
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
 	flexRender,
 	getCoreRowModel,
-	getFilteredRowModel,
-	getPaginationRowModel,
-	getSortedRowModel,
+	getFilteredRowModel, // <-- Tambahkan ini untuk filter client-side
 	useReactTable,
 } from "@tanstack/react-table";
 import {
 	ArrowUpDown,
 	ChevronDown,
-	Calendar as CalendarIcon,
+	Calendar as CalendarIcon, // <-- Tambahkan kembali ikon kalender
+	ChevronLeft,
+	ChevronRight,
+	ChevronsLeft,
+	ChevronsRight,
 } from "lucide-react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
-import { DateRange } from "react-day-picker"; // Import DateRange
+import { DateRange } from "react-day-picker";
 import useSWR from "swr";
 
-// Impor komponen UI dari shadcn/ui atau sejenisnya
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -65,7 +68,7 @@ export const columns = [
 		),
 		cell: ({ row }) => (
 			<div className="pl-4">
-				{new Date(row.getValue("time")).toLocaleString("id-ID", {
+				{new Date(row.original.date).toLocaleString("id-ID", {
 					year: "numeric",
 					month: "long",
 					day: "numeric",
@@ -75,138 +78,70 @@ export const columns = [
 				})}
 			</div>
 		),
-		// --- FUNGSI FILTER DIPERBARUI UNTUK RANGE ---
-		filterFn: (row, columnId, filterValue) => {
-			const rowDate = new Date(row.getValue(columnId));
-			const fromDate = filterValue?.from;
-			const toDate = filterValue?.to;
-
-			// Jika tidak ada tanggal awal, jangan filter (tampilkan semua)
-			if (!fromDate) {
-				return true;
-			}
-
-			// Jika hanya tanggal awal yang dipilih, filter untuk hari itu saja
-			if (fromDate && !toDate) {
-				return (
-					rowDate.getFullYear() === fromDate.getFullYear() &&
-					rowDate.getMonth() === fromDate.getMonth() &&
-					rowDate.getDate() === fromDate.getDate()
-				);
-			}
-
-			// Jika rentang tanggal lengkap dipilih
-			if (fromDate && toDate) {
-				// Atur 'from' ke awal hari dan 'to' ke akhir hari agar inklusif
-				const from = new Date(fromDate);
-				from.setHours(0, 0, 0, 0);
-				const to = new Date(toDate);
-				to.setHours(23, 59, 59, 999);
-				return rowDate >= from && rowDate <= to;
-			}
-
-			return true;
-		},
 	},
-	// ... Definisi kolom lainnya tetap sama (temperature, humidity, dst.)
-	{
-		accessorKey: "temperature",
-		header: "Suhu (°C)",
-		cell: ({ row }) => {
-			const value = parseFloat(row.getValue("temperature"));
-			return !isNaN(value) ? value.toFixed(2) : "N/A";
-		},
-	},
-	{
-		accessorKey: "humidity",
-		header: "Kelembapan (%)",
-		cell: ({ row }) => {
-			const value = parseFloat(row.getValue("humidity"));
-			return !isNaN(value) ? value.toFixed(2) : "N/A";
-		},
-	},
-	{
-		accessorKey: "ph",
-		header: "pH",
-		cell: ({ row }) => {
-			const value = parseFloat(row.getValue("ph"));
-			return !isNaN(value) ? value.toFixed(2) : "N/A";
-		},
-	},
-	{
-		accessorKey: "light",
-		header: "Cahaya",
-		cell: ({ row }) => {
-			const value = parseFloat(row.getValue("light"));
-			return !isNaN(value) ? value.toFixed(2) : "N/A";
-		},
-	},
-	{
-		accessorKey: "ec",
-		header: "EC",
-		cell: ({ row }) => {
-			const value = parseFloat(row.getValue("ec"));
-			return !isNaN(value) ? value.toFixed(2) : "N/A";
-		},
-	},
-	{
-		accessorKey: "water_temp",
-		header: "Suhu Air (°C)",
-		cell: ({ row }) => {
-			const value = parseFloat(row.getValue("water_temp"));
-			return !isNaN(value) ? value.toFixed(2) : "N/A";
-		},
-	},
+	{ accessorKey: "temperature", header: "Suhu (°C)" },
+	{ accessorKey: "humidity", header: "Kelembapan (%)" },
+	{ accessorKey: "ph", header: "pH" },
+	{ accessorKey: "light", header: "Cahaya" },
+	{ accessorKey: "ec", header: "EC" },
+	{ accessorKey: "water_temp", header: "Suhu Air (°C)" },
 ];
 
 const fetcher = (url) => fetch(url).then((res) => res.json());
 
-// --- Komponen Utama Tabel ---
 export function TableHistori() {
+	// --- DIUBAH: Tambahkan kembali state untuk filter tanggal ---
+	const [dateRange, setDateRange] = useState(undefined);
+	const [globalFilter, setGlobalFilter] = useState("");
+	const [columnVisibility, setColumnVisibility] = useState({});
+	const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+
+	const apiUrl = useMemo(() => {
+		const params = new URLSearchParams({
+			page: (pagination.pageIndex + 1).toString(),
+			limit: pagination.pageSize.toString(),
+		});
+		// --- DIUBAH: Tambahkan kembali parameter tanggal ke URL jika ada ---
+		if (dateRange?.from) {
+			const toDate = dateRange.to || dateRange.from;
+			const endOfDay = new Date(toDate);
+			endOfDay.setHours(23, 59, 59, 999);
+			params.append("start", dateRange.from.toISOString());
+			params.append("end", endOfDay.toISOString());
+		}
+		return `/api/sensor-data/all?${params.toString()}`;
+	}, [pagination, dateRange]);
+
 	const {
 		data: swrData,
 		error,
 		isLoading,
-	} = useSWR("/api/sensor-data?type=all", fetcher);
+	} = useSWR(apiUrl, fetcher, { keepPreviousData: true });
 
-	const [sorting, setSorting] = useState([{ id: "time", desc: true }]);
-	const [columnFilters, setColumnFilters] = useState([]);
-	const [columnVisibility, setColumnVisibility] = useState({});
-	const [globalFilter, setGlobalFilter] = useState("");
+	// Efek untuk reset halaman ke 1 jika filter tanggal berubah
+	useEffect(() => {
+		if (dateRange) {
+			setPagination((p) => ({ ...p, pageIndex: 0 }));
+		}
+	}, [dateRange]);
 
-	const data = React.useMemo(() => {
-		if (!swrData?.data) return [];
-		return swrData.data
-			.map((item) => ({
-				time: item.date,
-				temperature: item.temperature ?? "N/A",
-				humidity: item.humidity ?? "N/A",
-				ph: item.ph ?? "N/A",
-				light: item.light ?? "N/A",
-				ec: item.ec ?? "N/A",
-				water_temp: item.water_temp ?? "N/A",
-				water_level: item.water_level ?? "N/A",
-			}))
-			.sort((a, b) => new Date(b.time) - new Date(a.time));
-	}, [swrData]);
+	const data = useMemo(() => swrData?.data ?? [], [swrData]);
+	const pageCount = useMemo(() => {
+		return swrData?.total ? Math.ceil(swrData.total / pagination.pageSize) : 0;
+	}, [swrData, pagination.pageSize]);
 
 	const table = useReactTable({
 		data,
 		columns,
-		state: {
-			sorting,
-			columnFilters,
-			globalFilter,
-			columnVisibility,
-		},
-		onSortingChange: setSorting,
-		onColumnFiltersChange: setColumnFilters,
+		pageCount,
+		state: { pagination, globalFilter, columnVisibility },
+		onPaginationChange: setPagination,
 		onGlobalFilterChange: setGlobalFilter,
 		onColumnVisibilityChange: setColumnVisibility,
 		getCoreRowModel: getCoreRowModel(),
-		getFilteredRowModel: getFilteredRowModel(),
-		getPaginationRowModel: getPaginationRowModel(),
-		getSortedRowModel: getSortedRowModel(),
+		getFilteredRowModel: getFilteredRowModel(), // <-- Aktifkan model filter
+		manualPagination: true, // Paginasi tetap manual (di-handle server)
+		// manualFiltering: true, <-- Hapus atau set ke false agar search bekerja di client
 	});
 
 	return (
@@ -220,18 +155,16 @@ export function TableHistori() {
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="p-4 pt-4">
-				{/* --- Toolbar Terintegrasi --- */}
+				{/* --- DIUBAH: Tambahkan kembali komponen filter tanggal --- */}
 				<div className="flex flex-col sm:flex-row items-center gap-4 pb-4">
 					<Input
-						placeholder="Cari semua data..."
+						placeholder="Cari di halaman ini..."
 						value={globalFilter}
 						onChange={(e) => setGlobalFilter(e.target.value)}
 						className="w-full sm:max-w-xs"
 					/>
-					{/* Filter Tanggal */}
-					<DateRangeFilter column={table.getColumn("time")} />
+					<DateRangeFilter date={dateRange} onDateChange={setDateRange} />
 					<div className="flex items-center gap-2 ml-auto">
-						{/* Tombol Kolom */}
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
 								<Button variant="outline">
@@ -256,8 +189,7 @@ export function TableHistori() {
 						</DropdownMenu>
 					</div>
 				</div>
-
-				{/* --- Tabel Data --- */}
+				{/* Sisanya tetap sama */}
 				<div className="rounded-md border">
 					<Table>
 						<TableHeader className="bg-slate-50">
@@ -289,10 +221,7 @@ export function TableHistori() {
 								))
 							) : table.getRowModel().rows?.length ? (
 								table.getRowModel().rows.map((row) => (
-									<TableRow
-										key={row.id}
-										data-state={row.getIsSelected() && "selected"}
-									>
+									<TableRow key={row.id}>
 										{row.getVisibleCells().map((cell) => (
 											<TableCell key={cell.id}>
 												{flexRender(
@@ -316,39 +245,53 @@ export function TableHistori() {
 						</TableBody>
 					</Table>
 				</div>
-
-				{/* --- Paginasi --- */}
-				<div className="flex items-center justify-end space-x-2 pt-4">
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => table.previousPage()}
-						disabled={!table.getCanPreviousPage()}
-					>
-						Sebelumnya
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => table.nextPage()}
-						disabled={!table.getCanNextPage()}
-					>
-						Selanjutnya
-					</Button>
+				<div className="flex items-center justify-between pt-4">
+					<div className="text-sm text-muted-foreground">
+						Halaman {table.getState().pagination.pageIndex + 1} dari{" "}
+						{table.getPageCount()}
+					</div>
+					<div className="flex items-center space-x-2">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => table.setPageIndex(0)}
+							disabled={!table.getCanPreviousPage()}
+						>
+							<ChevronsLeft className="h-4 w-4" />
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => table.previousPage()}
+							disabled={!table.getCanPreviousPage()}
+						>
+							<ChevronLeft className="h-4 w-4" /> Sebelumnya
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => table.nextPage()}
+							disabled={!table.getCanNextPage()}
+						>
+							Selanjutnya <ChevronRight className="h-4 w-4" />
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+							disabled={!table.getCanNextPage()}
+						>
+							<ChevronsRight className="h-4 w-4" />
+						</Button>
+					</div>
 				</div>
 			</CardContent>
 		</Card>
 	);
 }
 
-// --- KOMPONEN FILTER DIPERBARUI UNTUK RANGE ---
-function DateRangeFilter({ column }) {
-	const [date, setDate] = useState(undefined);
-
-	useEffect(() => {
-		column?.setFilterValue(date);
-	}, [date, column]);
-
+// --- DIUBAH: Tambahkan kembali komponen DateRangeFilter ---
+function DateRangeFilter({ date, onDateChange }) {
 	return (
 		<Popover>
 			<PopoverTrigger asChild>
@@ -373,14 +316,41 @@ function DateRangeFilter({ column }) {
 			</PopoverTrigger>
 			<PopoverContent className="w-auto p-0" align="start">
 				<Calendar
-					mode="range" // Ganti mode menjadi "range"
+					mode="range"
 					selected={date}
-					onSelect={setDate}
+					onSelect={onDateChange}
 					initialFocus
 					locale={id}
-					numberOfMonths={2} // Tampilkan 2 bulan untuk navigasi lebih mudah
+					numberOfMonths={2}
 				/>
 			</PopoverContent>
 		</Popover>
+	);
+}
+
+// Komponen untuk data 'latest' tidak perlu diubah
+export function LatestSensorCard({ sensorKey, title, unit }) {
+	const { data, error, isLoading } = useSWR(
+		"/api/sensor-data/latest",
+		fetcher,
+		{ refreshInterval: 5000 }
+	);
+	const value = data?.[sensorKey];
+	const displayValue = typeof value === "number" ? value.toFixed(2) : "N/A";
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle className="text-lg">{title}</CardTitle>
+			</CardHeader>
+			<CardContent>
+				{isLoading ? (
+					<Skeleton className="h-10 w-2/3" />
+				) : (
+					<p className="text-3xl font-bold">
+						{displayValue} <span className="text-lg font-normal">{unit}</span>
+					</p>
+				)}
+			</CardContent>
+		</Card>
 	);
 }

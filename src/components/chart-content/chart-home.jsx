@@ -21,13 +21,13 @@ import useSWR from "swr";
 const fetcher = (url) => fetch(url).then((res) => res.json());
 
 export function ChartHome() {
-	// Use SWR for data fetching (only last 10 entries)
 	const { data, error, isLoading } = useSWR(
-		"/api/sensor-data?type=all&limit=10",
+		"/api/sensor-data/realtime-chart",
 		fetcher,
 		{ refreshInterval: 5000 } // Poll every 5 seconds
 	);
 
+	// Menjadi seperti ini:
 	const showData = data?.data || [];
 
 	const chartConfig = {

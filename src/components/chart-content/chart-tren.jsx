@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
 	Area,
 	AreaChart,
 	Brush,
 	CartesianGrid,
-	LabelList,
 	ReferenceArea,
-	ReferenceLine,
 	XAxis,
 	YAxis,
 } from "recharts";
@@ -47,7 +45,7 @@ import {
 	AlertTriangle,
 	LineChart,
 } from "lucide-react";
-import useSWR from "swr"; // Import SWR
+import useSWR from "swr";
 
 // Konfigurasi lengkap untuk semua sensor
 const chartConfig = {
@@ -144,14 +142,6 @@ const SENSOR_OPTIONS = Object.entries(chartConfig).map(
 	})
 );
 
-// Fungsi helper untuk menghitung tanggal awal berdasarkan range
-function getStartDate(range) {
-	const days = range === "90d" ? 90 : range === "7d" ? 7 : 30;
-	const d = new Date();
-	d.setDate(d.getDate() - days);
-	return d;
-}
-
 // Fungsi untuk mendapatkan rekomendasi berdasarkan nilai sensor
 function getRecommendation(sensorKey, value, trend) {
 	const config = chartConfig[sensorKey];
@@ -208,17 +198,37 @@ function getRecommendation(sensorKey, value, trend) {
 		icon: status === "normal" ? CheckCircle2 : AlertTriangle,
 	};
 }
+
 const fetcher = (url) => fetch(url).then((res) => res.json());
+
+// Fungsi untuk menentukan jendela agregasi secara dinamis
+function getAggregateWindow(timeRange) {
+	switch (timeRange) {
+		case "90d":
+			return "1d"; // Rata-rata per 1 hari
+		case "30d":
+			return "12h"; // Rata-rata per 12 jam
+		case "7d":
+			return "1h"; // Rata-rata per 1 jam
+		case "24h":
+			return "10m"; // Rata-rata per 10 menit
+		default:
+			return "1h"; // Default
+	}
+}
 
 // Komponen utama ChartTren
 export function ChartTren() {
 	const [primarySensor, setPrimarySensor] = useState("temperature");
 	const [timeRange, setTimeRange] = useState("7d");
-	const { data: allData, error } = useSWR(
-		`/api/sensor-data?type=all&sensor=${primarySensor}&range=-${timeRange}`,
-		fetcher
-	); // Fetch data dengan SWR
-	const loading = !allData && !error; // Menentukan loading state
+
+	// Fetch data dengan SWR, URL dibuat di dalam hook untuk reaktivitas
+	const { data: allData, error } = useSWR(() => {
+		const aggregateWindow = getAggregateWindow(timeRange);
+		return `/api/sensor-data/analisis?sensor=${primarySensor}&range=-${timeRange}&aggregateWindow=${aggregateWindow}`;
+	}, fetcher);
+
+	const loading = !allData && !error;
 
 	const { filteredData, summaryStats, insights } = useMemo(() => {
 		if (!allData || !allData.data || !allData.data.length)
@@ -229,7 +239,6 @@ export function ChartTren() {
 			.map((item) => item[primarySensor])
 			.filter((v) => v != null);
 
-		// Hitung statistik dasar
 		const stats = {
 			avg:
 				primaryValues.length > 0
@@ -247,7 +256,6 @@ export function ChartTren() {
 					: "N/A",
 		};
 
-		// Tren
 		let trendData = null;
 		if (primaryValues.length > 1) {
 			const first = primaryValues[0];
@@ -312,6 +320,7 @@ export function ChartTren() {
 							<SelectItem value="90d">3 Bulan</SelectItem>
 							<SelectItem value="30d">30 Hari</SelectItem>
 							<SelectItem value="7d">7 Hari</SelectItem>
+							<SelectItem value="24h">24 Jam</SelectItem>
 						</SelectContent>
 					</Select>
 				</div>
@@ -468,7 +477,7 @@ function ChartVisualization({ data, primarySensor }) {
 					y1={chartConfig[primarySensor].thresholds.min}
 					y2={chartConfig[primarySensor].thresholds.max}
 					stroke="none"
-					fill="#10b981" // Warna hijau untuk zona aman
+					fill="#10b981"
 					fillOpacity={0.1}
 				/>
 				<Area
@@ -479,7 +488,7 @@ function ChartVisualization({ data, primarySensor }) {
 					fill={`url(#fill_${primarySensor})`}
 					stroke={chartConfig[primarySensor]?.color}
 					strokeWidth={2.5}
-					dot={true}
+					dot={false} // Matikan dot default untuk performa
 					activeDot={{ r: 6 }}
 				/>
 				<Brush
@@ -539,16 +548,30 @@ function RecommendationBox({ recommendation }) {
 	);
 }
 
+// Komponen skeleton untuk loading
 function ChartSkeleton() {
 	return (
 		<div className="flex flex-col gap-4 w-full">
-			<Skeleton className="h-8 w-1/3 rounded-lg" />
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-				<Skeleton className="h-12 w-full rounded-lg" />
-				<Skeleton className="h-12 w-full rounded-lg" />
-				<Skeleton className="h-12 w-full rounded-lg" />
+			<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+				<Skeleton className="h-20 w-full rounded-lg" />
+				<Skeleton className="h-20 w-full rounded-lg" />
+				<Skeleton className="h-20 w-full rounded-lg" />
 			</div>
-			<Skeleton className="h-[400px] w-full rounded-lg" />
+			<Skeleton className="h-10 w-1/3 self-center rounded-lg" />
+			<Skeleton className="h-5 w-1/2 self-center rounded-lg" />
+			<Skeleton className="h-[400px] w-full rounded-lg mt-2" />
+			<Skeleton className="h-24 w-full rounded-lg" />
+		</div>
+	);
+}
+
+// Komponen untuk menampilkan pesan error
+function ErrorDisplay({ error }) {
+	return (
+		<div className="flex flex-col items-center justify-center h-[600px] text-red-500 bg-red-50 rounded-lg border border-red-200">
+			<AlertTriangle className="w-12 h-12 mb-4" />
+			<p className="text-lg font-semibold">Gagal Memuat Data Grafik</p>
+			<p className="text-sm text-red-700">{error}</p>
 		</div>
 	);
 }

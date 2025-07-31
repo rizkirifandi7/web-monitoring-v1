@@ -18,7 +18,7 @@ import { formatSensorData } from "@/utils/formatData";
 const HomePage = () => {
 	const fetcher = (url) => fetch(url).then((res) => res.json());
 	const { data: sensorData, error } = useSWR(
-		"/api/sensor-data?type=latest",
+		"/api/sensor-data/latest",
 		fetcher,
 		{
 			refreshInterval: 2000,
