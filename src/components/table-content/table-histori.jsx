@@ -265,7 +265,7 @@ export function TableHistori() {
 							onClick={() => table.previousPage()}
 							disabled={!table.getCanPreviousPage()}
 						>
-							<ChevronLeft className="h-4 w-4" /> Sebelumnya
+							<ChevronLeft className="h-4 w-4" /> Selanjutnya
 						</Button>
 						<Button
 							variant="outline"
@@ -273,7 +273,7 @@ export function TableHistori() {
 							onClick={() => table.nextPage()}
 							disabled={!table.getCanNextPage()}
 						>
-							Selanjutnya <ChevronRight className="h-4 w-4" />
+							Sebelumnya <ChevronRight className="h-4 w-4" />
 						</Button>
 						<Button
 							variant="outline"
