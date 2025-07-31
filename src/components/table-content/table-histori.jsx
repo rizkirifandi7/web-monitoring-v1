@@ -167,9 +167,7 @@ export function TableHistori() {
 		data: swrData,
 		error,
 		isLoading,
-	} = useSWR("/api/sensor-data?type=all", fetcher, {
-		refreshInterval: 2000,
-	});
+	} = useSWR("/api/sensor-data?type=all", fetcher);
 
 	const [sorting, setSorting] = useState([{ id: "time", desc: true }]);
 	const [columnFilters, setColumnFilters] = useState([]);
