@@ -163,10 +163,11 @@ function getRecommendation(sensorKey, value, trend) {
 	let trendText = "";
 
 	if (trend && trend.direction !== "neutral") {
+		const trendLabel = trend.type === "doubleExponential" ? "double eksponensial" : "eksponensial";
 		trendText =
 			trend.direction === "up"
-				? `Data menunjukkan tren kenaikan ${trend.percent}%.`
-				: `Data menunjukkan tren penurunan ${Math.abs(trend.percent)}%.`;
+				? `Data menunjukkan tren ${trendLabel} kenaikan dengan laju ${trend.percent}% per unit waktu.`
+				: `Data menunjukkan tren ${trendLabel} penurunan dengan laju ${Math.abs(trend.percent)}% per unit waktu.`;
 	}
 
 	if (value < min) {
@@ -199,6 +200,76 @@ function getRecommendation(sensorKey, value, trend) {
 	};
 }
 
+// Fungsi untuk menghitung tren double eksponensial menggunakan metode Holt's linear trend
+function calculateDoubleExponentialTrend(data, sensorKey, alpha = 0.3, beta = 0.3) {
+	// Filter data yang memiliki nilai sensor
+	const validData = data.filter(item => item[sensorKey] != null && !isNaN(item[sensorKey]));
+	
+	if (validData.length < 2) {
+		return null;
+	}
+	
+	// Konversi nilai sensor ke angka
+	const points = validData.map((item, index) => ({
+		x: index,
+		y: parseFloat(item[sensorKey])
+	})).filter(point => !isNaN(point.y));
+	
+	if (points.length < 2) {
+		return null;
+	}
+	
+	// Inisialisasi level dan trend
+	let level = points[0].y;
+	let trend = points.length > 1 ? points[1].y - points[0].y : 0;
+	
+	// Array untuk menyimpan hasil
+	const results = [];
+	
+	// Hitung double exponential smoothing untuk setiap titik data
+	for (let i = 1; i < points.length; i++) {
+		const currentValue = points[i].y;
+		
+		// Persamaan level: l_t = α * y_t + (1 - α) * (l_{t-1} + b_{t-1})
+		const newLevel = alpha * currentValue + (1 - alpha) * (level + trend);
+		
+		// Persamaan trend: b_t = β * (l_t - l_{t-1}) + (1 - β) * b_{t-1}
+		const newTrend = beta * (newLevel - level) + (1 - beta) * trend;
+		
+		// Simpan hasil
+		results.push({
+			level: newLevel,
+			trend: newTrend,
+			forecast: level + trend // Forecast untuk periode berikutnya
+		});
+		
+		// Update level dan trend untuk iterasi berikutnya
+		level = newLevel;
+		trend = newTrend;
+	}
+	
+	// Hitung persentase perubahan tren berdasarkan tren terakhir
+	const lastTrend = results[results.length - 1]?.trend || 0;
+	const lastLevel = results[results.length - 1]?.level || 1; // Gunakan 1 untuk menghindari pembagian dengan 0
+	
+	// Persentase perubahan = (trend / level) * 100%
+	const percentChange = (lastTrend / lastLevel) * 100;
+	
+	// Tentukan arah tren
+	const direction =
+		percentChange > 0.1 ? "up" :
+		percentChange < -0.1 ? "down" :
+		"neutral";
+	
+	return {
+		type: "doubleExponential",
+		percent: percentChange.toFixed(1),
+		direction: direction,
+		level: level,
+		trend: trend
+	};
+}
+
 const fetcher = (url) => fetch(url).then((res) => res.json());
 
 // Fungsi untuk menentukan jendela agregasi secara dinamis
@@ -217,10 +288,71 @@ function getAggregateWindow(timeRange) {
 	}
 }
 
+// Fungsi untuk menghitung tren eksponensial menggunakan regresi logaritmik
+function calculateExponentialTrend(data, sensorKey) {
+	// Filter data yang memiliki nilai sensor
+	const validData = data.filter(item => item[sensorKey] != null && !isNaN(item[sensorKey]));
+	
+	if (validData.length < 2) {
+		return null;
+	}
+	
+	// Konversi tanggal ke timestamp dan nilai sensor ke angka
+	const points = validData.map((item, index) => ({
+		x: index, // Gunakan index sebagai waktu untuk menyederhanakan perhitungan
+		y: parseFloat(item[sensorKey])
+	})).filter(point => !isNaN(point.y));
+	
+	if (points.length < 2) {
+		return null;
+	}
+	
+	// Transformasi logaritmik untuk nilai y
+	const logPoints = points.map(point => ({
+		x: point.x,
+		y: Math.log(point.y)
+	})).filter(point => !isNaN(point.y));
+	
+	if (logPoints.length < 2) {
+		return null;
+	}
+	
+	// Hitung regresi linear pada data log-transformed
+	const n = logPoints.length;
+	let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+	
+	for (const point of logPoints) {
+		sumX += point.x;
+		sumY += point.y;
+		sumXY += point.x * point.y;
+		sumXX += point.x * point.x;
+	}
+	
+	// Hitung slope dan intercept
+	const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+	
+	// Konversi slope ke persentase laju perubahan eksponensial
+	// Laju perubahan eksponensial = (e^slope - 1) * 100%
+	const percentChange = (Math.exp(slope) - 1) * 100;
+	
+	// Tentukan arah tren berdasarkan slope
+	const direction =
+		percentChange > 0.1 ? "up" :
+		percentChange < -0.1 ? "down" :
+		"neutral";
+	
+	return {
+		percent: percentChange.toFixed(1),
+		direction: direction,
+		slope: slope
+	};
+}
+
 // Komponen utama ChartTren
 export function ChartTren() {
 	const [primarySensor, setPrimarySensor] = useState("temperature");
 	const [timeRange, setTimeRange] = useState("7d");
+	const [trendType, setTrendType] = useState("doubleExponential");
 
 	// Fetch data dengan SWR, URL dibuat di dalam hook untuk reaktivitas
 	const { data: allData, error } = useSWR(() => {
@@ -256,28 +388,22 @@ export function ChartTren() {
 					: "N/A",
 		};
 
-		let trendData = null;
-		if (primaryValues.length > 1) {
-			const first = primaryValues[0];
-			const last = primaryValues[primaryValues.length - 1];
-			if (first !== 0) {
-				const percent = ((last - first) / Math.abs(first)) * 100;
-				if (!isNaN(percent)) {
-					trendData = {
-						percent: percent.toFixed(1),
-						direction:
-							percent > 0.1 ? "up" : percent < -0.1 ? "down" : "neutral",
-					};
-				}
-			}
+		// Hitung tren berdasarkan pilihan trendType
+		let trend = null;
+		if (trendType === "exponential") {
+			trend = calculateExponentialTrend(dataInRange, primarySensor);
+		} else if (trendType === "doubleExponential") {
+			trend = calculateDoubleExponentialTrend(dataInRange, primarySensor);
 		}
 
 		return {
 			filteredData: dataInRange,
 			summaryStats: stats,
-			insights: { trend: trendData },
+			insights: {
+				trend
+			},
 		};
-	}, [allData, primarySensor]);
+	}, [allData, primarySensor, trendType]);
 
 	const recommendation = getRecommendation(
 		primarySensor,
@@ -323,6 +449,15 @@ export function ChartTren() {
 							<SelectItem value="24h">24 Jam</SelectItem>
 						</SelectContent>
 					</Select>
+					<Select value={trendType} onValueChange={setTrendType}>
+						<SelectTrigger className="w-[180px] rounded-lg">
+							<SelectValue placeholder="Tipe Tren" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="exponential">Tren Eksponensial</SelectItem>
+							<SelectItem value="doubleExponential">Tren Double Eksponensial</SelectItem>
+						</SelectContent>
+					</Select>
 				</div>
 			</CardHeader>
 
@@ -348,6 +483,8 @@ export function ChartTren() {
 						<ChartVisualization
 							data={filteredData}
 							primarySensor={primarySensor}
+							trend={insights.trend}
+							trendType={trendType}
 						/>
 						<RecommendationBox recommendation={recommendation} />
 					</div>
@@ -407,14 +544,69 @@ function StatCard({ icon: Icon, title, value, unit, trend }) {
 }
 
 // Komponen visualisasi chart
-function ChartVisualization({ data, primarySensor }) {
+function ChartVisualization({ data, primarySensor, trend, trendType }) {
+	// Prepare trend data for visualization
+	const trendData = useMemo(() => {
+		if (!trend || !data || data.length === 0) return data;
+		
+		// For exponential trend, we can show the trend line
+		if (trendType === "exponential" && trend.slope !== undefined) {
+			// Create trend line data based on the exponential trend calculation
+			return data.map((item, index) => {
+				// Calculate trend value using the exponential formula
+				// y = a * e^(bx) where b is the slope from our calculation
+				const baseValue = item[primarySensor];
+				if (baseValue === undefined || baseValue === null) return item;
+				
+				// For display purposes, we'll create a trend line that starts from the first data point
+				// and follows the exponential trend
+				const firstValue = data[0][primarySensor];
+				if (firstValue === undefined || firstValue === null) return item;
+				
+				// Calculate the trend value: y = initial_value * e^(slope * index)
+				const trendValue = firstValue * Math.exp(trend.slope * index);
+				
+				return {
+					...item,
+					[`${primarySensor}_trend`]: trendValue
+				};
+			});
+		}
+		
+		// For double exponential trend, we can show forecasted values
+		if (trendType === "doubleExponential" && trend.level !== undefined && trend.trend !== undefined) {
+			// Create a copy of the original data
+			const trendDataPoints = [...data];
+			
+			// Add forecast points for the next 5 time periods
+			const lastDataPoint = data[data.length - 1];
+			const lastDate = new Date(lastDataPoint.date);
+			
+			for (let i = 1; i <= 5; i++) {
+				const forecastDate = new Date(lastDate);
+				// Simple forecast increment (you might want to adjust based on your time range logic)
+				forecastDate.setHours(forecastDate.getHours() + i);
+				
+				trendDataPoints.push({
+					date: forecastDate.toISOString(),
+					[primarySensor]: trend.level + i * trend.trend,
+					isForecast: true
+				});
+			}
+			
+			return trendDataPoints;
+		}
+		
+		return data;
+	}, [data, primarySensor, trend, trendType]);
+	
 	return (
 		<ChartContainer
 			config={chartConfig}
 			className="aspect-video h-[400px] w-full mt-6"
 		>
 			<AreaChart
-				data={data}
+				data={trendData}
 				margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
 			>
 				<defs>
@@ -433,6 +625,25 @@ function ChartVisualization({ data, primarySensor }) {
 						<stop
 							offset="95%"
 							stopColor={chartConfig[primarySensor]?.color}
+							stopOpacity={0.1}
+						/>
+					</linearGradient>
+					{/* Define a different color for forecast data */}
+					<linearGradient
+						id={`fill_${primarySensor}_forecast`}
+						x1="0"
+						y1="0"
+						x2="0"
+						y2="1"
+					>
+						<stop
+							offset="5%"
+							stopColor="#94a3b8"
+							stopOpacity={0.8}
+						/>
+						<stop
+							offset="95%"
+							stopColor="#94a3b8"
 							stopOpacity={0.1}
 						/>
 					</linearGradient>
@@ -491,6 +702,36 @@ function ChartVisualization({ data, primarySensor }) {
 					dot={false} // Matikan dot default untuk performa
 					activeDot={{ r: 6 }}
 				/>
+				{/* Add trend line for exponential trend */}
+				{trendType === "exponential" && trend && trend.slope !== undefined && (
+					<Area
+						yAxisId="left"
+						type="monotone"
+						dataKey={`${primarySensor}_trend`}
+						name={`${chartConfig[primarySensor]?.label} (Tren Eksponensial)`}
+						stroke="#94a3b8"
+						strokeWidth={1.5}
+						dot={false}
+						activeDot={false}
+						fill="none"
+						strokeDasharray="3 3"
+					/>
+				)}
+				{/* Add forecast line for double exponential trend */}
+				{trendType === "doubleExponential" && trend && trend.level !== undefined && (
+					<Area
+						yAxisId="left"
+						type="monotone"
+						dataKey={primarySensor}
+						name={`${chartConfig[primarySensor]?.label} (Prediksi)`}
+						fill={`url(#fill_${primarySensor}_forecast)`}
+						stroke="#94a3b8"
+						strokeWidth={1.5}
+						dot={false}
+						activeDot={false}
+						isForecast={true}
+					/>
+				)}
 				<Brush
 					dataKey="date"
 					height={30}
