@@ -51,12 +51,6 @@ export function AppSidebar({ ...props }) {
 				icon: History,
 				isActive: pathname === "/dashboard/histori",
 			},
-			{
-				title: "Pengaturan",
-				url: "/dashboard/pengaturan",
-				icon: Settings2,
-				isActive: pathname === "/dashboard/pengaturan",
-			},
 		],
 	};
 

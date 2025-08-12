@@ -106,7 +106,7 @@ const chartConfig = {
 		},
 	},
 	ec: {
-		label: "EC (μS/cm)",
+		label: "EC (mS/cm)",
 		color: "#8b5cf6",
 		icon: Zap,
 		thresholds: { min: 1.2, max: 2.5 },
